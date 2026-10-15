@@ -489,6 +489,18 @@ public partial class MainWindow : Window
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
+        if (HomePanel.Visibility == Visibility.Visible &&
+            e.Key is Key.Up or Key.Down or Key.Left or Key.Right)
+        {
+            var direction = e.Key is Key.Up or Key.Left ?
+                FocusNavigationDirection.Previous : FocusNavigationDirection.Next;
+            if (Keyboard.FocusedElement is UIElement current)
+                current.MoveFocus(new TraversalRequest(direction));
+            else HomeLiveButton.Focus();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.F11 && BrowsePanel.Visibility == Visibility.Visible)
         {
             ToggleFullscreen(); e.Handled = true;
