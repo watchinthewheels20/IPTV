@@ -96,6 +96,26 @@ The app records only playback stage names, format choice, timestamps, and except
 
 The previous code called LibVLC's synchronous `MediaPlayer.Stop()` on the UI thread during every channel change. This build serialises media operations and performs blocking stop/play operations on background threads so the window can still respond when a provider or stream misbehaves.
 
+## New: Sky-inspired home screen (UI preview)
+
+After login LoungeTV now starts on a TV-first, Sky Glass-inspired **Home** screen.
+It has **Watch live TV**, **Continue watching**, **Channels**, **Search**, and
+clickable category shortcuts. The **TV Guide** tile is intentionally disabled:
+a full Sky Q-inspired EPG is planned for a separate development stage.
+
+- **Home** (top bar) returns from the channel browser and stops the hidden live stream.
+- **B / Escape** returns from the channel browser to Home; **B** exits fullscreen first.
+- **D-pad** navigates Home controls, **A** activates the focused button.
+- **Continue watching** restores the last channel ID (stored locally, without credentials).
+- Channel search is debounced and replaces the list's item source in one operation to avoid
+  thousands of observable-collection updates with large IPTV playlists.
+- The existing LibVLC playback engine and secure login are preserved.
+
+This is a UI preview; controller focus and runtime behaviour still need testing on
+Windows with an actual controller and a provider playlist. The local playback diagnostic
+log does not measure frames dropped or decode performance; choppy video would require
+additional information, separate from slow channel-list navigation.
+
 ## Stage 2 and later
 
 The planned next addition is a Sky Q-inspired channel guide using provider XMLTV/EPG data, integrated with the same existing video session. A Sky Glass-inspired home screen, favourites, VOD and improved remote control support will follow.
