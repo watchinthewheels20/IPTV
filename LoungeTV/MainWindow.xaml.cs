@@ -20,7 +20,7 @@ public partial class MainWindow : Window
 {
     private readonly ObservableCollection<ChannelCategory> _categories = new();
     private List<LiveChannel> _visibleChannels = new();
-    private readonly DispatcherTimer _searchTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
+    private readonly DispatcherTimer _searchTimer = new() { Interval = TimeSpan.FromMilliseconds(90) };
     private readonly GamepadInput _gamepad = new();
     private readonly List<LiveChannel> _allChannels = new();
     private XtreamApiClient? _api;
@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     private bool _connecting;
     private bool _fullScreen;
     private bool _focusChannels = true;
+    private DispatcherOperation? _scrollOperation;
     private WindowState _previousWindowState = WindowState.Normal;
     private Thickness _normalBrowseMargin;
 
@@ -117,13 +118,12 @@ public partial class MainWindow : Window
             }
 
             LoginPanel.Visibility = Visibility.Collapsed;
-            BrowsePanel.Visibility = Visibility.Collapsed;
-            HomePanel.Visibility = Visibility.Visible;
-            HomeButton.Visibility = AccountButton.Visibility = RefreshButton.Visibility = Visibility.Visible;
-            FullScreenButton.Visibility = Visibility.Collapsed;
+            HomePanel.Visibility = Visibility.Collapsed;
+            BrowsePanel.Visibility = Visibility.Visible;
+            HomeButton.Visibility = AccountButton.Visibility = RefreshButton.Visibility = FullScreenButton.Visibility = Visibility.Visible;
             GeneralStatusText.Text = $"Connected · {channels.Count:N0} channels · {categories.Count:N0} categories.{persisted}";
             PlayerStatusText.Text = "Select a channel and press A, Enter or Play selected.";
-            HomeLiveButton.Focus();
+            ChannelList.Focus();
             _focusChannels = true;
         }
         catch (ArgumentException ex)
@@ -584,8 +584,18 @@ public partial class MainWindow : Window
         var list = _focusChannels ? ChannelList : CategoryList;
         if (list.Items.Count == 0) return;
         var index = list.SelectedIndex < 0 ? 0 : list.SelectedIndex;
-        list.SelectedIndex = Math.Clamp(index + delta, 0, list.Items.Count - 1);
-        list.ScrollIntoView(list.SelectedItem);
+        var next = Math.Clamp(index + delta, 0, list.Items.Count - 1);
+        if (next == list.SelectedIndex) return;
+        list.SelectedIndex = next;
+
+        // Scroll after the selection can render. Cancel an old request during rapid
+        // D-pad repeats, so many synchronous ScrollIntoView calls cannot queue up.
+        if (_scrollOperation?.Status == DispatcherOperationStatus.Pending)
+            _scrollOperation.Abort();
+        _scrollOperation = Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+        {
+            if (list.SelectedItem is not null) list.ScrollIntoView(list.SelectedItem);
+        }));
     }
 
     private void ChangeChannel(int delta)
