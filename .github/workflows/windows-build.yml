@@ -1,0 +1,47 @@
+name: LoungeTV Windows build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Publish Windows x64
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish LoungeTV
+        shell: pwsh
+        run: ./Build-LoungeTV.ps1
+
+      - name: Verify executable and native LibVLC library
+        shell: pwsh
+        run: |
+          $publish = Join-Path $PWD 'publish/LoungeTV-win-x64'
+          if (-not (Test-Path (Join-Path $publish 'LoungeTV.exe'))) {
+            throw 'LoungeTV.exe was not produced.'
+          }
+          $native = Get-ChildItem $publish -Filter 'libvlc.dll' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $native) {
+            throw 'Native LibVLC library is missing from published output.'
+          }
+          Write-Host "Found LibVLC native library at $($native.FullName)"
+
+      - name: Upload self-contained Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: LoungeTV-win-x64
+          path: publish/LoungeTV-win-x64/
+          if-no-files-found: error
+          retention-days: 14
