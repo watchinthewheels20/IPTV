@@ -56,7 +56,7 @@
 
             <!-- Sky Glass-inspired, intentionally lightweight home screen.
                  No video or graphical effects are instantiated on this screen. -->
-            <ScrollViewer x:Name="HomePanel" Visibility="Collapsed" Margin="25,0,25,12"
+            <ScrollViewer x:Name="HomePanel" Visibility="Collapsed" KeyboardNavigation.TabNavigation="Cycle" Margin="25,0,25,12"
                           VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           Focusable="False">
                 <StackPanel MaxWidth="1480">
