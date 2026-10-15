@@ -96,25 +96,21 @@ The app records only playback stage names, format choice, timestamps, and except
 
 The previous code called LibVLC's synchronous `MediaPlayer.Stop()` on the UI thread during every channel change. This build serialises media operations and performs blocking stop/play operations on background threads so the window can still respond when a provider or stream misbehaves.
 
-## New: Sky-inspired home screen (UI preview)
+## Classic Sky+ HD-inspired interface (UI preview)
 
-After login LoungeTV now starts on a TV-first, Sky Glass-inspired **Home** screen.
-It has **Watch live TV**, **Continue watching**, **Channels**, **Search**, and
-clickable category shortcuts. The **TV Guide** tile is intentionally disabled:
-a full Sky Q-inspired EPG is planned for a separate development stage.
+The experimental Sky Glass-style tiles have been replaced by a **classic blue Sky+ HD-inspired** menu and channel browser, with rectangular guide panels and gold selection indicators.
 
-- **Home** (top bar) returns from the channel browser and stops the hidden live stream.
-- **B / Escape** returns from the channel browser to Home; **B** exits fullscreen first.
-- **D-pad** navigates Home controls, **A** activates the focused button.
-- **Continue watching** restores the last channel ID (stored locally, without credentials).
-- Channel search is debounced and replaces the list's item source in one operation to avoid
-  thousands of observable-collection updates with large IPTV playlists.
-- The existing LibVLC playback engine and secure login are preserved.
+- On successful Xtream login, LoungeTV opens the **TV Guide/channel browser directly**.
+- Select a category on the left, a channel in the middle, and watch in the **Mini TV** area on the right.
+- **Home** opens an old-style text menu (TV Guide, All Channels, Search Channels, Last Channel). There is no animated card carousel.
+- **B / Escape** backs out from TV Guide to Home; **B** exits fullscreen first.
+- **D-pad** navigates, **A** selects, **X** toggles fullscreen. Keyboard arrow keys navigate Home too.
+- The actual programme-by-time EPG remains a *future feature*. Existing channel listings do not falsely show programme schedules.
+- Controller polling checks the active XInput device first and reduces its first-repeat delay from 340 to 195 ms. Key scan interval decreases from 60 to 30 ms.
+- Long channel-list scrolling is scheduled after selection updates and superseded scroll tasks are cancelled; channel search is batched and debounced at 90 ms.
+- Last-channel resume, Xtream login, native VLC playback and diagnostics remain in place.
 
-This is a UI preview; controller focus and runtime behaviour still need testing on
-Windows with an actual controller and a provider playlist. The local playback diagnostic
-log does not measure frames dropped or decode performance; choppy video would require
-additional information, separate from slow channel-list navigation.
+**Still needs real-device verification:** The Windows CI build checks compilation and packaging, but not actual gamepad or menu latency on a TV. The log in `%LOCALAPPDATA%\LoungeTV\playback.log` is about playback startup, not UI frame timing.
 
 ## Stage 2 and later
 
