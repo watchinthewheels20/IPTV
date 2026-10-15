@@ -1,0 +1,121 @@
+<Window x:Class="LoungeTV.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
+        Title="LoungeTV — Live TV" Height="780" Width="1350"
+        MinHeight="570" MinWidth="900" WindowStartupLocation="CenterScreen"
+        Background="{StaticResource PageBrush}" Foreground="{StaticResource TextBrush}"
+        KeyDown="Window_KeyDown" Closing="Window_Closing">
+    <Grid x:Name="RootGrid">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="70" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="35" />
+        </Grid.RowDefinitions>
+
+        <Grid x:Name="TopBar" Grid.Row="0" Margin="24,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="LOUNGE" Foreground="{StaticResource AccentBrush}" FontSize="23" FontWeight="Bold" />
+                <TextBlock Text="TV" FontSize="23" FontWeight="Bold" />
+                <TextBlock Text="  /  LIVE TELEVISION" Margin="10,8,0,0" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button x:Name="AccountButton" Visibility="Collapsed" Content="Account" Click="AccountButton_Click" Margin="0,0,10,0" />
+                <Button x:Name="RefreshButton" Visibility="Collapsed" Content="Refresh channels" Click="RefreshButton_Click" Margin="0,0,10,0" />
+                <Button x:Name="FullScreenButton" Visibility="Collapsed" Content="Full screen  (F11)" Click="FullScreenButton_Click" />
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="1">
+            <Grid x:Name="LoginPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Width="470" MaxHeight="640">
+                <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="35">
+                    <StackPanel>
+                        <TextBlock Text="Connect to your IPTV service" FontSize="25" FontWeight="SemiBold" Margin="0,0,0,8" />
+                        <TextBlock Text="Enter the Xtream Codes details supplied by your provider."
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,25" />
+                        <TextBlock Text="SERVER URL" Foreground="{StaticResource AccentBrush}" FontSize="11" FontWeight="Bold" Margin="0,0,0,8" />
+                        <TextBox x:Name="ServerBox" Text="" Margin="0,0,0,18" ToolTip="Example: https://provider.example:1234" />
+                        <TextBlock Text="USERNAME" Foreground="{StaticResource AccentBrush}" FontSize="11" FontWeight="Bold" Margin="0,0,0,8" />
+                        <TextBox x:Name="UsernameBox" Margin="0,0,0,18" />
+                        <TextBlock Text="PASSWORD" Foreground="{StaticResource AccentBrush}" FontSize="11" FontWeight="Bold" Margin="0,0,0,8" />
+                        <PasswordBox x:Name="PasswordInput" Margin="0,0,0,18" />
+                        <CheckBox x:Name="RememberCheck" Foreground="{StaticResource TextBrush}" IsChecked="True"
+                                  Content="Remember login on this Windows account" Margin="0,0,0,22" />
+                        <Button x:Name="ConnectButton" Content="Connect and load channels" Click="ConnectButton_Click"
+                                Background="#24629B" FontWeight="SemiBold" Padding="18,13" />
+                        <TextBlock x:Name="LoginMessage" Text="" TextWrapping="Wrap" Margin="0,14,0,0"
+                                   Foreground="{StaticResource MutedBrush}" />
+                        <TextBlock Text="Use only IPTV services and streams you are authorised to access."
+                                   Margin="0,24,0,0" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Grid x:Name="BrowsePanel" Visibility="Collapsed" Margin="14,0,14,9">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="CategoriesColumn" Width="215" />
+                    <ColumnDefinition x:Name="ChannelsColumn" Width="325" />
+                    <ColumnDefinition Width="*" MinWidth="250" />
+                </Grid.ColumnDefinitions>
+                <Border x:Name="CategoryPanel" Grid.Column="0" Background="{StaticResource PanelBrush}" CornerRadius="12" Margin="0,0,9,0" Padding="8">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="CATEGORIES" FontWeight="SemiBold" FontSize="12"
+                                   Foreground="{StaticResource AccentBrush}" Margin="13,13,8,12" />
+                        <ListBox x:Name="CategoryList" ItemContainerStyle="{StaticResource NavigationListItemStyle}"
+                                 SelectionChanged="CategoryList_SelectionChanged" DisplayMemberPath="DisplayName" />
+                    </DockPanel>
+                </Border>
+                <Border x:Name="ChannelPanel" Grid.Column="1" Background="{StaticResource PanelBrush}" CornerRadius="12" Margin="0,0,9,0" Padding="8">
+                    <DockPanel LastChildFill="True">
+                        <StackPanel DockPanel.Dock="Top" Margin="8,10,8,10">
+                            <TextBlock Text="CHANNELS" FontWeight="SemiBold" FontSize="12"
+                                       Foreground="{StaticResource AccentBrush}" Margin="5,3,0,12" />
+                            <TextBox x:Name="SearchBox" TextChanged="SearchBox_TextChanged" ToolTip="Filter channels by name" />
+                            <TextBlock Text="Search channels" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="5,5,0,0" />
+                        </StackPanel>
+                        <ListBox x:Name="ChannelList" ItemContainerStyle="{StaticResource NavigationListItemStyle}"
+                                 DisplayMemberPath="DisplayName" SelectionChanged="ChannelList_SelectionChanged"
+                                 MouseDoubleClick="ChannelList_MouseDoubleClick" />
+                    </DockPanel>
+                </Border>
+                <Border Grid.Column="2" Background="#060B15" CornerRadius="12" ClipToBounds="True">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Margin="20,16" Orientation="Vertical">
+                            <TextBlock Text="NOW PLAYING" FontSize="11" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+                            <TextBlock x:Name="NowPlayingText" Text="Select a channel to begin" FontSize="20" Margin="0,7,0,0"
+                                       FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                        <vlc:VideoView x:Name="PlayerView" Grid.Row="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+                        <Grid Grid.Row="2" Background="#141F33" MinHeight="64">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock x:Name="PlayerStatusText" Text="Ready" VerticalAlignment="Center" Margin="15,0" FontSize="12"
+                                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                            <ComboBox x:Name="StreamFormatBox" Grid.Column="1" SelectedIndex="0" VerticalAlignment="Center"
+                                      MinWidth="86" Margin="5" Padding="8,6" ToolTip="Stream format, choose Auto unless your provider needs an override">
+                                <ComboBoxItem Content="Auto" />
+                                <ComboBoxItem Content="MPEG-TS" />
+                                <ComboBoxItem Content="HLS" />
+                            </ComboBox>
+                            <Button x:Name="PlayButton" Grid.Column="2" Content="Play selected" Click="PlayButton_Click"
+                                    Margin="4,9" Background="#24629B" />
+                            <Button x:Name="StopButton" Grid.Column="3" Content="Stop" Click="StopButton_Click" Margin="4,9,10,9" />
+                        </Grid>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+        <Grid x:Name="StatusBar" Grid.Row="2" Margin="24,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <TextBlock x:Name="GeneralStatusText" Text="Ready to connect" FontSize="11"
+                       Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="1" Text="Xbox: D-pad move · A play · X fullscreen · B back/stop"
+                       FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+        </Grid>
+    </Grid>
+</Window>
