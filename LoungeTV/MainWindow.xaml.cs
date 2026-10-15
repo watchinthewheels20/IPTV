@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Threading;
 using LibVLCSharp.Shared;
@@ -18,7 +19,8 @@ namespace LoungeTV;
 public partial class MainWindow : Window
 {
     private readonly ObservableCollection<ChannelCategory> _categories = new();
-    private readonly ObservableCollection<LiveChannel> _visibleChannels = new();
+    private List<LiveChannel> _visibleChannels = new();
+    private readonly DispatcherTimer _searchTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
     private readonly GamepadInput _gamepad = new();
     private readonly List<LiveChannel> _allChannels = new();
     private XtreamApiClient? _api;
@@ -44,6 +46,7 @@ public partial class MainWindow : Window
         CategoryList.ItemsSource = _categories;
         ChannelList.ItemsSource = _visibleChannels;
         _normalBrowseMargin = BrowsePanel.Margin;
+        _searchTimer.Tick += (_, _) => { _searchTimer.Stop(); if (_allChannels.Count > 0) UpdateVisibleChannels(); };
         _gamepad.Command += HandleGamepad;
         _gamepad.Start();
 
@@ -98,6 +101,8 @@ public partial class MainWindow : Window
             foreach (var category in categories) _categories.Add(category);
             CategoryList.SelectedIndex = 0;
             UpdateVisibleChannels();
+            HomeCategoryItems.ItemsSource = categories.Take(9).ToArray();
+            UpdateResumeTile();
 
             var persisted = "";
             try
@@ -112,11 +117,13 @@ public partial class MainWindow : Window
             }
 
             LoginPanel.Visibility = Visibility.Collapsed;
-            BrowsePanel.Visibility = Visibility.Visible;
-            AccountButton.Visibility = RefreshButton.Visibility = FullScreenButton.Visibility = Visibility.Visible;
+            BrowsePanel.Visibility = Visibility.Collapsed;
+            HomePanel.Visibility = Visibility.Visible;
+            HomeButton.Visibility = AccountButton.Visibility = RefreshButton.Visibility = Visibility.Visible;
+            FullScreenButton.Visibility = Visibility.Collapsed;
             GeneralStatusText.Text = $"Connected · {channels.Count:N0} channels · {categories.Count:N0} categories.{persisted}";
             PlayerStatusText.Text = "Select a channel and press A, Enter or Play selected.";
-            ChannelList.Focus();
+            HomeLiveButton.Focus();
             _focusChannels = true;
         }
         catch (ArgumentException ex)
@@ -165,29 +172,93 @@ public partial class MainWindow : Window
 
     private void UpdateVisibleChannels()
     {
+        // Replace one ItemsSource instead of triggering thousands of
+        // ObservableCollection change notifications for large provider lineups.
         var previousId = (ChannelList.SelectedItem as LiveChannel)?.Id;
         var categoryId = (CategoryList.SelectedItem as ChannelCategory)?.Id ?? "*";
         var search = SearchBox.Text.Trim();
-        _visibleChannels.Clear();
-        foreach (var channel in _allChannels)
-        {
-            if (categoryId != "*" && channel.CategoryId != categoryId) continue;
-            if (search.Length > 0 && !channel.Name.Contains(search, StringComparison.OrdinalIgnoreCase)) continue;
-            _visibleChannels.Add(channel);
-        }
-        ChannelList.SelectedItem = _visibleChannels.FirstOrDefault(c => c.Id == previousId) ?? _visibleChannels.FirstOrDefault();
+        _visibleChannels = _allChannels.Where(channel =>
+            (categoryId == "*" || channel.CategoryId == categoryId) &&
+            (search.Length == 0 || channel.Name.Contains(search, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        ChannelList.ItemsSource = _visibleChannels;
+        ChannelList.SelectedItem = _visibleChannels.FirstOrDefault(c => c.Id == previousId) ??
+                                   _visibleChannels.FirstOrDefault();
         if (_allChannels.Count > 0)
             GeneralStatusText.Text = $"{_visibleChannels.Count:N0} channels shown / {_allChannels.Count:N0} total";
     }
 
     private void CategoryList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        _searchTimer.Stop();
         if (_allChannels.Count > 0) UpdateVisibleChannels();
     }
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (_allChannels.Count > 0) UpdateVisibleChannels();
+        if (_allChannels.Count == 0) return;
+        _searchTimer.Stop();
+        _searchTimer.Start();
+    }
+
+    private void UpdateResumeTile()
+    {
+        var id = RecentChannelStore.Load();
+        var recent = _allChannels.FirstOrDefault(c => c.Id == id);
+        HomeResumeButton.IsEnabled = recent is not null;
+        HomeResumeName.Text = recent?.Name ?? "No recently watched channel";
+    }
+
+    private void ShowLiveTv(bool focusSearch = false)
+    {
+        if (_api is null) return;
+        HomePanel.Visibility = Visibility.Collapsed;
+        BrowsePanel.Visibility = Visibility.Visible;
+        FullScreenButton.Visibility = Visibility.Visible;
+        if (focusSearch) SearchBox.Focus();
+        else ChannelList.Focus();
+        _focusChannels = true;
+    }
+
+    private void ShowHome()
+    {
+        if (_api is null) return;
+        if (_fullScreen) ToggleFullscreen();
+        BrowsePanel.Visibility = Visibility.Collapsed;
+        HomePanel.Visibility = Visibility.Visible;
+        FullScreenButton.Visibility = Visibility.Collapsed;
+        UpdateResumeTile();
+        HomeLiveButton.Focus();
+        _ = StopPlaybackAsync(); // Do not leave live TV running invisibly.
+    }
+
+    private void HomeButton_Click(object sender, RoutedEventArgs e) => ShowHome();
+    private void HomeLiveButton_Click(object sender, RoutedEventArgs e) => ShowLiveTv();
+    private void HomeBrowseButton_Click(object sender, RoutedEventArgs e) => ShowLiveTv();
+    private void HomeSearchButton_Click(object sender, RoutedEventArgs e) => ShowLiveTv(focusSearch: true);
+
+    private void HomeResumeButton_Click(object sender, RoutedEventArgs e)
+    {
+        var recentId = RecentChannelStore.Load();
+        var recent = _allChannels.FirstOrDefault(c => c.Id == recentId);
+        if (recent is null) { UpdateResumeTile(); return; }
+        CategoryList.SelectedIndex = 0;
+        SearchBox.Text = "";
+        UpdateVisibleChannels();
+        ChannelList.SelectedItem = _visibleChannels.FirstOrDefault(c => c.Id == recentId);
+        ShowLiveTv();
+        PlaySelectedChannel();
+    }
+
+    private void HomeCategory_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string categoryId }) return;
+        var category = _categories.FirstOrDefault(c => c.Id == categoryId);
+        if (category is null) return;
+        SearchBox.Text = "";
+        CategoryList.SelectedItem = category;
+        UpdateVisibleChannels();
+        ShowLiveTv();
     }
 
     private void ChannelList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -287,6 +358,8 @@ public partial class MainWindow : Window
                     return _mediaPlayer!.Play(media);
                 });
                 PlaybackDiagnostics.Note(started ? "LibVLC Play returned true" : "LibVLC Play returned false");
+                if (started && request == Volatile.Read(ref _playbackRequest))
+                    RecentChannelStore.Save(channel.Id);
                 if (request == Volatile.Read(ref _playbackRequest) && !started)
                 {
                     PlayerStatusText.Text = "VLC could not start this stream. Try a different format.";
@@ -372,8 +445,9 @@ public partial class MainWindow : Window
         if (_fullScreen) ToggleFullscreen();
         await StopPlaybackAsync();
         BrowsePanel.Visibility = Visibility.Collapsed;
+        HomePanel.Visibility = Visibility.Collapsed;
         LoginPanel.Visibility = Visibility.Visible;
-        AccountButton.Visibility = RefreshButton.Visibility = FullScreenButton.Visibility = Visibility.Collapsed;
+        HomeButton.Visibility = AccountButton.Visibility = RefreshButton.Visibility = FullScreenButton.Visibility = Visibility.Collapsed;
         LoginMessage.Text = "Update your connection or reconnect.";
         ServerBox.Focus();
     }
@@ -415,8 +489,30 @@ public partial class MainWindow : Window
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.F11) { ToggleFullscreen(); e.Handled = true; }
-        else if (e.Key == Key.Escape && _fullScreen) { ToggleFullscreen(); e.Handled = true; }
+        if (HomePanel.Visibility == Visibility.Visible &&
+            e.Key is Key.Up or Key.Down or Key.Left or Key.Right)
+        {
+            var direction = e.Key is Key.Up or Key.Left ?
+                FocusNavigationDirection.Previous : FocusNavigationDirection.Next;
+            if (Keyboard.FocusedElement is UIElement current)
+                current.MoveFocus(new TraversalRequest(direction));
+            else HomeLiveButton.Focus();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.F11 && BrowsePanel.Visibility == Visibility.Visible)
+        {
+            ToggleFullscreen(); e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && _fullScreen)
+        {
+            ToggleFullscreen(); e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && BrowsePanel.Visibility == Visibility.Visible)
+        {
+            ShowHome(); e.Handled = true;
+        }
         else if (e.Key == Key.Enter && BrowsePanel.Visibility == Visibility.Visible &&
                  (ChannelList.IsKeyboardFocusWithin || CategoryList.IsKeyboardFocusWithin))
         {
@@ -426,12 +522,32 @@ public partial class MainWindow : Window
 
     private void HandleGamepad(GamepadCommand command)
     {
-        if (!IsActive || BrowsePanel.Visibility != Visibility.Visible) return;
+        if (!IsActive) return;
+
+        if (HomePanel.Visibility == Visibility.Visible)
+        {
+            if (command is GamepadCommand.Up or GamepadCommand.Left or GamepadCommand.Down or GamepadCommand.Right)
+            {
+                var direction = command is GamepadCommand.Up or GamepadCommand.Left ?
+                    FocusNavigationDirection.Previous : FocusNavigationDirection.Next;
+                if (Keyboard.FocusedElement is UIElement current)
+                    current.MoveFocus(new TraversalRequest(direction));
+                else HomeLiveButton.Focus();
+            }
+            else if (command == GamepadCommand.Select &&
+                     Keyboard.FocusedElement is Button button && button.IsEnabled)
+            {
+                button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            }
+            return;
+        }
+
+        if (BrowsePanel.Visibility != Visibility.Visible) return;
         if (command == GamepadCommand.Fullscreen) { ToggleFullscreen(); return; }
         if (command == GamepadCommand.Back)
         {
             if (_fullScreen) ToggleFullscreen();
-            else StopPlayback();
+            else ShowHome();
             return;
         }
         if (_fullScreen)
