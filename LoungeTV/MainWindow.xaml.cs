@@ -118,13 +118,12 @@ public partial class MainWindow : Window
             }
 
             LoginPanel.Visibility = Visibility.Collapsed;
-            BrowsePanel.Visibility = Visibility.Collapsed;
-            HomePanel.Visibility = Visibility.Visible;
-            HomeButton.Visibility = AccountButton.Visibility = RefreshButton.Visibility = Visibility.Visible;
-            FullScreenButton.Visibility = Visibility.Collapsed;
+            HomePanel.Visibility = Visibility.Collapsed;
+            BrowsePanel.Visibility = Visibility.Visible;
+            HomeButton.Visibility = AccountButton.Visibility = RefreshButton.Visibility = FullScreenButton.Visibility = Visibility.Visible;
             GeneralStatusText.Text = $"Connected · {channels.Count:N0} channels · {categories.Count:N0} categories.{persisted}";
             PlayerStatusText.Text = "Select a channel and press A, Enter or Play selected.";
-            HomeLiveButton.Focus();
+            ChannelList.Focus();
             _focusChannels = true;
         }
         catch (ArgumentException ex)
