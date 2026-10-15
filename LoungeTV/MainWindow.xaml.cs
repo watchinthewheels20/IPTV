@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Net.Http;
 using System.Text.Json;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -26,6 +27,11 @@ public partial class MainWindow : Window
     private MediaPlayer? _mediaPlayer;
     private Media? _currentMedia;
     private LiveChannel? _playingChannel;
+    private readonly SemaphoreSlim _mediaGate = new(1, 1);
+    private int _playbackRequest;
+    private bool _receivedPlaying;
+    private bool _closingInProgress;
+    private bool _closePermitted;
     private bool _connecting;
     private bool _fullScreen;
     private bool _focusChannels = true;
@@ -197,68 +203,174 @@ public partial class MainWindow : Window
     private void EnsurePlayer()
     {
         if (_mediaPlayer is not null) return;
+
+        PlaybackDiagnostics.Note("Initialising LibVLC");
         Core.Initialize();
         _libVlc = new LibVLC("--network-caching=900", "--live-caching=900", "--no-video-title-show");
         _mediaPlayer = new MediaPlayer(_libVlc);
         _mediaPlayer.Opening += (_, _) => DispatchPlaybackStatus("Opening stream…");
         _mediaPlayer.Buffering += (_, _) => DispatchPlaybackStatus("Buffering stream…");
-        _mediaPlayer.Playing += (_, _) => DispatchPlaybackStatus("Playing live TV");
-        _mediaPlayer.EncounteredError += (_, _) => DispatchPlaybackStatus("Playback error. Try another stream format or channel.");
+        _mediaPlayer.Playing += (_, _) => DispatchPlaybackStatus("Playing live TV", confirmed: true);
+        _mediaPlayer.EncounteredError += (_, _) =>
+            DispatchPlaybackStatus("Playback error. Try another stream format or channel.");
         _mediaPlayer.EndReached += (_, _) => DispatchPlaybackStatus("Stream ended.");
         PlayerView.MediaPlayer = _mediaPlayer;
+        PlaybackDiagnostics.Note("LibVLC player created and attached to VideoView");
     }
 
-    private void DispatchPlaybackStatus(string message)
+    private void DispatchPlaybackStatus(string message, bool confirmed = false)
     {
+        // LibVLC callbacks run on native worker threads. Never call Stop or Play in a callback.
+        PlaybackDiagnostics.Note("LibVLC event: " + message);
         if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
-        _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => PlayerStatusText.Text = message));
+        _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+        {
+            if (_closingInProgress || _playingChannel is null) return;
+            if (confirmed) _receivedPlaying = true;
+            PlayerStatusText.Text = message;
+        }));
     }
 
-    private void PlaySelectedChannel()
+    private void PlaySelectedChannel() => _ = PlaySelectedChannelAsync();
+
+    private async Task PlaySelectedChannelAsync()
     {
-        if (_api is null || _account is null || ChannelList.SelectedItem is not LiveChannel channel)
+        if (_closingInProgress || _api is null || _account is null ||
+            ChannelList.SelectedItem is not LiveChannel channel)
             return;
+
+        // Invalidate any older pending playback or timeout request.
+        var request = Interlocked.Increment(ref _playbackRequest);
+        _receivedPlaying = false;
+        _playingChannel = channel;
+        NowPlayingText.Text = channel.Name;
+        var format = StreamFormatBox.SelectedIndex switch
+        {
+            1 => "ts",
+            2 => "m3u8",
+            _ => _account.AllowedFormats.Contains("ts") || _account.AllowedFormats.Count == 0 ? "ts" :
+                _account.AllowedFormats.Contains("m3u8") ? "m3u8" : "ts"
+        };
+        PlayerStatusText.Text = $"Preparing {format.ToUpperInvariant()} stream…";
+        PlaybackDiagnostics.Note($"Requested playback (format {format}); no URL or credentials recorded");
+        _ = PlaybackWatchdogAsync(request);
+        bool needsStop = false;
 
         try
         {
-            EnsurePlayer();
-            var format = StreamFormatBox.SelectedIndex switch
-            {
-                1 => "ts",
-                2 => "m3u8",
-                _ => _account.AllowedFormats.Contains("ts") || _account.AllowedFormats.Count == 0 ? "ts" :
-                    _account.AllowedFormats.Contains("m3u8") ? "m3u8" : "ts"
-            };
+            EnsurePlayer(); // VideoView.MediaPlayer must be set on the WPF UI thread.
             var streamUri = _api.GetStreamUri(channel.Id, format);
-            _mediaPlayer!.Stop();
-            _currentMedia?.Dispose();
-            _currentMedia = new Media(_libVlc!, streamUri);
-            _playingChannel = channel;
-            NowPlayingText.Text = channel.Name;
-            PlayerStatusText.Text = $"Opening {format.ToUpperInvariant()} stream…";
-            if (!_mediaPlayer.Play(_currentMedia))
-                PlayerStatusText.Text = "Could not start playback. Try another stream format.";
+            await _mediaGate.WaitAsync();
+            try
+            {
+                if (request != Volatile.Read(ref _playbackRequest)) return;
+                PlayerStatusText.Text = $"Opening {format.ToUpperInvariant()} stream…";
+                PlaybackDiagnostics.Note("Calling LibVLC MediaPlayer.Play");
+
+                // LibVLC Stop is synchronous and may wait for native threads: never run
+                // it on the UI thread. Serialize all stop/play operations to avoid races.
+                var started = await Task.Run(() =>
+                {
+                    if (_currentMedia is not null)
+                    {
+                        var previous = _currentMedia;
+                        try { _mediaPlayer!.Stop(); }
+                        finally
+                        {
+                            previous.Dispose();
+                            _currentMedia = null;
+                        }
+                    }
+
+                    var media = new Media(_libVlc!, streamUri);
+                    _currentMedia = media;
+                    return _mediaPlayer!.Play(media);
+                });
+                PlaybackDiagnostics.Note(started ? "LibVLC Play returned true" : "LibVLC Play returned false");
+                if (request == Volatile.Read(ref _playbackRequest) && !started)
+                {
+                    PlayerStatusText.Text = "VLC could not start this stream. Try a different format.";
+                    needsStop = true;
+                }
+            }
+            finally { _mediaGate.Release(); }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            PlayerStatusText.Text = "Unable to start video. Check the native LibVLC libraries and stream format.";
+            PlaybackDiagnostics.Failure("Starting playback", ex);
+            if (request == Volatile.Read(ref _playbackRequest))
+            {
+                PlayerStatusText.Text = $"Playback failed ({ex.GetType().Name}). Try HLS or MPEG-TS.";
+                needsStop = true;
+            }
         }
+
+        if (needsStop && request == Volatile.Read(ref _playbackRequest))
+            await StopPlaybackAsync();
     }
 
-    private void StopPlayback()
+    private async Task PlaybackWatchdogAsync(int request)
     {
-        _mediaPlayer?.Stop();
-        _currentMedia?.Dispose();
-        _currentMedia = null;
-        _playingChannel = null;
-        PlayerStatusText.Text = "Playback stopped";
-        NowPlayingText.Text = (ChannelList.SelectedItem as LiveChannel)?.Name ?? "Select a channel to begin";
+        await Task.Delay(TimeSpan.FromSeconds(20));
+        if (_closingInProgress || request != Volatile.Read(ref _playbackRequest) || _receivedPlaying)
+            return;
+
+        PlaybackDiagnostics.Note("Playback timed out: no Playing event after 20 seconds");
+        PlayerStatusText.Text = "Stream timed out after 20 seconds. Try HLS/MPEG-TS or another channel.";
+        await StopPlaybackAsync();
+        // Preserve the useful timeout message after stopping.
+        if (!_closingInProgress && request + 1 == Volatile.Read(ref _playbackRequest))
+            PlayerStatusText.Text = "Stream timed out. Try HLS/MPEG-TS or another channel.";
     }
 
-    private void AccountButton_Click(object sender, RoutedEventArgs e)
+    private void StopPlayback() => _ = StopPlaybackAsync();
+
+    private async Task StopPlaybackAsync()
+    {
+        var request = Interlocked.Increment(ref _playbackRequest);
+        _receivedPlaying = false;
+        _playingChannel = null;
+        PlayerStatusText.Text = "Stopping playback…";
+        PlaybackDiagnostics.Note("Stop requested");
+
+        await _mediaGate.WaitAsync();
+        try
+        {
+            if (_currentMedia is not null)
+            {
+                PlaybackDiagnostics.Note("Calling native LibVLC Stop in background");
+                await Task.Run(() =>
+                {
+                    var current = _currentMedia;
+                    try { _mediaPlayer?.Stop(); }
+                    finally
+                    {
+                        current?.Dispose();
+                        _currentMedia = null;
+                    }
+                });
+                PlaybackDiagnostics.Note("Native LibVLC Stop completed");
+            }
+            if (request == Volatile.Read(ref _playbackRequest))
+            {
+                PlayerStatusText.Text = "Playback stopped";
+                NowPlayingText.Text = (ChannelList.SelectedItem as LiveChannel)?.Name ??
+                                      "Select a channel to begin";
+            }
+        }
+        catch (Exception ex)
+        {
+            PlaybackDiagnostics.Failure("Stopping playback", ex);
+            if (request == Volatile.Read(ref _playbackRequest))
+                PlayerStatusText.Text = $"Playback stop failed ({ex.GetType().Name}).";
+        }
+        finally { _mediaGate.Release(); }
+    }
+
+    private async void AccountButton_Click(object sender, RoutedEventArgs e)
     {
         if (_fullScreen) ToggleFullscreen();
-        StopPlayback();
+        await StopPlaybackAsync();
         BrowsePanel.Visibility = Visibility.Collapsed;
         LoginPanel.Visibility = Visibility.Visible;
         AccountButton.Visibility = RefreshButton.Visibility = FullScreenButton.Visibility = Visibility.Collapsed;
@@ -370,14 +482,28 @@ public partial class MainWindow : Window
         PlaySelectedChannel();
     }
 
-    private void Window_Closing(object? sender, CancelEventArgs e)
+    private async void Window_Closing(object? sender, CancelEventArgs e)
     {
+        if (_closePermitted) return;
+        e.Cancel = true;
+        if (_closingInProgress) return;
+
+        _closingInProgress = true;
         _gamepad.Dispose();
-        PlayerView.MediaPlayer = null;
-        _mediaPlayer?.Stop();
-        _currentMedia?.Dispose();
-        _mediaPlayer?.Dispose();
-        _libVlc?.Dispose();
-        _api?.Dispose();
+        await StopPlaybackAsync();
+        try
+        {
+            PlayerView.MediaPlayer = null;
+            _mediaPlayer?.Dispose();
+            _libVlc?.Dispose();
+            _api?.Dispose();
+            PlaybackDiagnostics.Note("Player closed normally");
+        }
+        catch (Exception ex)
+        {
+            PlaybackDiagnostics.Failure("Closing player", ex);
+        }
+        _closePermitted = true;
+        Close();
     }
 }
