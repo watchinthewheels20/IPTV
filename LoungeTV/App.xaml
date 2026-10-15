@@ -3,12 +3,12 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-        <SolidColorBrush x:Key="PageBrush" Color="#071531 />
-        <SolidColorBrush x:Key="PanelBrush" Color="#133665 />
-        <SolidColorBrush x:Key="ElevatedBrush" Color="#1B457D />
-        <SolidColorBrush x:Key="AccentBrush" Color="#FFCA39 />
-        <SolidColorBrush x:Key="TextBrush" Color="#F2F7FF />
-        <SolidColorBrush x:Key="MutedBrush" Color="#B6C9E2 />
+        <SolidColorBrush x:Key="PageBrush" Color="#071531" />
+        <SolidColorBrush x:Key="PanelBrush" Color="#133665" />
+        <SolidColorBrush x:Key="ElevatedBrush" Color="#1B457D" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#FFCA39" />
+        <SolidColorBrush x:Key="TextBrush" Color="#F2F7FF" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#B6C9E2" />
 
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
