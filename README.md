@@ -83,6 +83,19 @@ Use mouse/keyboard to enter the server credentials, username, password or search
 
 **Xbox controller doesn't respond**: verify that Windows recognises it as an XInput-compatible controller and that LoungeTV is the active window.
 
+## Diagnosing playback stalls (playback-fix build)
+
+If the channel list loads but video stays black, shows "Opening stream", or the UI stops responding:
+
+1. First choose **HLS** in the stream format box and try a channel. If that fails, try **MPEG-TS**.
+2. Check the playback status below the video. A stream without a VLC `Playing` event is marked as timed out after 20 seconds.
+3. Open `%LOCALAPPDATA%\LoungeTV\playback.log` (paste this path into Windows Explorer's address bar) and inspect the final events.
+4. Report whether the **whole window is unresponsive** or just **video remains black/buffering**. Also report which format you tried.
+
+The app records only playback stage names, format choice, timestamps, and exception *type*—not stream URLs, passwords, usernames, server addresses, or native VLC messages. You can normally share the log, but review it yourself first.
+
+The previous code called LibVLC's synchronous `MediaPlayer.Stop()` on the UI thread during every channel change. This build serialises media operations and performs blocking stop/play operations on background threads so the window can still respond when a provider or stream misbehaves.
+
 ## Stage 2 and later
 
 The planned next addition is a Sky Q-inspired channel guide using provider XMLTV/EPG data, integrated with the same existing video session. A Sky Glass-inspired home screen, favourites, VOD and improved remote control support will follow.
