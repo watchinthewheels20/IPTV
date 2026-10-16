@@ -21,6 +21,10 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Check XMLTV parsing and British Summer Time
+        shell: pwsh
+        run: dotnet run --project LoungeTV.EpgChecks/LoungeTV.EpgChecks.csproj --configuration Release
+
       - name: Publish LoungeTV
         shell: pwsh
         run: ./Build-LoungeTV.ps1
