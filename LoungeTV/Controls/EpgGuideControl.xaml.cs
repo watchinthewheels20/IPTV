@@ -121,6 +121,10 @@ public partial class EpgGuideControl : UserControl
     }
 
     private void GuideLoaded(object sender, RoutedEventArgs e) => Render();
+    private void TimeHeader_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (Math.Abs(e.NewSize.Width - _previousWidth) > 15) Render();
+    }
     private void GuideResized(object sender, SizeChangedEventArgs e)
     {
         if (Math.Abs(TimeHeader.ActualWidth - _previousWidth) > 15)
@@ -174,12 +178,20 @@ public partial class EpgGuideControl : UserControl
 
     private void Programme_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is Button { Tag: LiveChannel channel })
+        if (sender is not Button button) return;
+        LiveChannel channel;
+        if (button.Tag is ValueTuple<LiveChannel, EpgProgramme> selection)
         {
-            var index = _channels.FindIndex(c => c.Id == channel.Id);
-            if (index >= 0) _selectedIndex = index;
-            Render();
+            channel = selection.Item1;
+            var start = selection.Item2.StartUtc.AddMinutes(_offsetMinutes + 1);
+            _cursor = start < _windowStart ? _windowStart : start;
         }
+        else if (button.Tag is LiveChannel rowChannel) channel = rowChannel;
+        else return;
+
+        var index = _channels.FindIndex(c => c.Id == channel.Id);
+        if (index >= 0) _selectedIndex = index;
+        Render();
     }
 
     private void Render()
@@ -271,7 +283,7 @@ public partial class EpgGuideControl : UserControl
 
             var cell = new Button
             {
-                Tag = channel,
+                Tag = (channel, programme),
                 Content = new TextBlock
                 {
                     Text = programme.Title,
