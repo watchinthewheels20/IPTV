@@ -110,6 +110,7 @@ public partial class MainWindow : Window
             CategoryList.SelectedIndex = 0;
             UpdateVisibleChannels();
             GuideView.SetChannels(_allChannels);
+            GuideView.SetCategories(_categories);
             HomeCategoryItems.ItemsSource = categories.Take(9).ToArray();
             UpdateResumeTile();
 
@@ -564,6 +565,19 @@ public partial class MainWindow : Window
     {
         if (GuideView.Visibility == Visibility.Visible)
         {
+            if (GuideView.IsEditingPicker) return;
+            if (e.Key == Key.OemOpenBrackets || e.Key == Key.PageUp)
+            {
+                GuideView.ChangeOffset(-30); e.Handled = true; return;
+            }
+            if (e.Key == Key.OemCloseBrackets || e.Key == Key.PageDown)
+            {
+                GuideView.ChangeOffset(30); e.Handled = true; return;
+            }
+            if (e.Key == Key.C)
+            {
+                GuideView.Navigate(GamepadCommand.NextCategory); e.Handled = true; return;
+            }
             var command = e.Key switch
             {
                 Key.Up => GamepadCommand.Up,
