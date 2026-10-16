@@ -60,6 +60,27 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="12,10" />
         </Style>
+        <!-- Explicit readable popup and selected-item colours regardless of system theme. -->
+        <Style TargetType="ComboBox">
+            <Setter Property="Foreground" Value="#101820" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#6482B1" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+        </Style>
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="#101820" />
+            <Setter Property="Background" Value="White" />
+            <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter Property="Background" Value="#D5E6FA" />
+                    <Setter Property="Foreground" Value="#101820" />
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#F5D177" />
+                    <Setter Property="Foreground" Value="#101820" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
         <Style TargetType="ListBox">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
