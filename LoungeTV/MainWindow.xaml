@@ -162,7 +162,7 @@
                     </DockPanel>
                 </Border>
                 <Border Grid.Column="2" Background="#0A234A" CornerRadius="12" ClipToBounds="True">
-                    <Grid>
+                    <Grid x:Name="PlayerContainerGrid">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
