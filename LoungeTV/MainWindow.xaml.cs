@@ -38,6 +38,9 @@ public partial class MainWindow : Window
     private bool _closePermitted;
     private bool _connecting;
     private bool _fullScreen;
+    private Window? _epgOverlay;
+    private ListBox? _overlayList;
+    private List<LiveChannel> _overlayChannels = new();
     private bool _focusChannels = true;
     private DispatcherOperation? _scrollOperation;
     private WindowState _previousWindowState = WindowState.Normal;
@@ -139,6 +142,20 @@ public partial class MainWindow : Window
             GuideView.Focus();
             _focusChannels = true;
             _ = LoadEpgAsync(_api!);
+
+            // Resume live TV automatically only when login is securely remembered
+            // and the prior channel still exists in this provider's catalogue.
+            if (RememberCheck.IsChecked == true)
+            {
+                var recent = _allChannels.FirstOrDefault(c => c.Id == RecentChannelStore.Load());
+                if (recent is not null)
+                {
+                    ChannelList.SelectedItem = _visibleChannels.FirstOrDefault(c => c.Id == recent.Id);
+                    ShowLiveTv();
+                    PlaySelectedChannel();
+                    ToggleFullscreen();
+                }
+            }
         }
         catch (ArgumentException ex)
         {
@@ -198,6 +215,7 @@ public partial class MainWindow : Window
             if (cts.IsCancellationRequested || _api != client || _closingInProgress) return;
             _epg = data;
             GuideView.SetEpg(data);
+            if (_epgOverlay is not null) RefreshOverlayListings();
             PlaybackDiagnostics.Note($"EPG parsed: {data.ProgrammeCount} programmes");
         }
         catch (OperationCanceledException) { }
@@ -531,6 +549,7 @@ public partial class MainWindow : Window
     private void ToggleFullscreen()
     {
         if (BrowsePanel.Visibility != Visibility.Visible) return;
+        if (_fullScreen) CloseEpgOverlay();
         if (!_fullScreen)
         {
             _previousWindowState = WindowState;
@@ -563,6 +582,16 @@ public partial class MainWindow : Window
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
+        if (_fullScreen && e.Key is Key.G or Key.Tab)
+        {
+            ToggleEpgOverlay(); e.Handled = true; return;
+        }
+        if (_epgOverlay is not null)
+        {
+            if (e.Key is Key.Escape or Key.Back) { CloseEpgOverlay(); e.Handled = true; return; }
+            if (e.Key is Key.Up or Key.Down) { MoveOverlaySelection(e.Key == Key.Up ? -1 : 1); e.Handled = true; return; }
+            if (e.Key == Key.Enter) { TuneOverlaySelection(); e.Handled = true; return; }
+        }
         if (GuideView.Visibility == Visibility.Visible)
         {
             if (GuideView.IsEditingPicker) return;
@@ -665,12 +694,22 @@ public partial class MainWindow : Window
         if (command == GamepadCommand.Fullscreen) { ToggleFullscreen(); return; }
         if (command == GamepadCommand.Back)
         {
+            if (_epgOverlay is not null) { CloseEpgOverlay(); return; }
             if (_fullScreen) ToggleFullscreen();
             else ShowHome();
             return;
         }
         if (_fullScreen)
         {
+            if (command == GamepadCommand.NextCategory) { ToggleEpgOverlay(); return; }
+            if (_epgOverlay is not null)
+            {
+                if (command == GamepadCommand.Back) CloseEpgOverlay();
+                else if (command == GamepadCommand.Up) MoveOverlaySelection(-1);
+                else if (command == GamepadCommand.Down) MoveOverlaySelection(1);
+                else if (command == GamepadCommand.Select) TuneOverlaySelection();
+                return;
+            }
             if (command == GamepadCommand.Up) ChangeChannel(-1);
             if (command == GamepadCommand.Down) ChangeChannel(1);
             return;
@@ -696,6 +735,114 @@ public partial class MainWindow : Window
                 else { _focusChannels = true; ChannelList.Focus(); }
                 break;
         }
+    }
+
+
+    // A separate transparent top-level window is required: LibVLC's native
+    // VideoView is hosted in an HWND and ordinary sibling WPF panels sit behind it.
+    private void ToggleEpgOverlay()
+    {
+        if (!_fullScreen) return;
+        if (_epgOverlay is not null) { CloseEpgOverlay(); return; }
+
+        _overlayList = new ListBox
+        {
+            FontSize = 19, Foreground = System.Windows.Media.Brushes.White,
+            Background = System.Windows.Media.Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Stretch
+        };
+        _overlayList.SelectionChanged += (_, _) => { };
+        var title = new TextBlock
+        {
+            Text = "TV GUIDE    •    Y / G: close     A / Enter: watch",
+            FontSize = 19, FontWeight = FontWeights.Bold, Foreground =
+                System.Windows.Media.Brushes.Gold, Margin = new Thickness(18, 12, 10, 12)
+        };
+        var panel = new DockPanel();
+        DockPanel.SetDock(title, Dock.Top);
+        panel.Children.Add(title);
+        panel.Children.Add(_overlayList);
+        var surface = new Border
+        {
+            Background = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromArgb(215, 8, 26, 56)),
+            BorderBrush = System.Windows.Media.Brushes.SteelBlue,
+            BorderThickness = new Thickness(1),
+            Child = panel,
+            Padding = new Thickness(14)
+        };
+        var layout = new Grid { Background = System.Windows.Media.Brushes.Transparent };
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(2, GridUnitType.Star) });
+        Grid.SetRow(surface, 1);
+        layout.Children.Add(surface);
+
+        _epgOverlay = new Window
+        {
+            Owner = this, WindowStyle = WindowStyle.None,
+            AllowsTransparency = true,
+            Background = System.Windows.Media.Brushes.Transparent,
+            ShowInTaskbar = false, ShowActivated = false,
+            ResizeMode = ResizeMode.NoResize,
+            Topmost = true, Content = layout,
+            Left = Left, Top = Top, Width = ActualWidth, Height = ActualHeight
+        };
+        _epgOverlay.Show();
+        RefreshOverlayListings();
+    }
+
+    private void CloseEpgOverlay()
+    {
+        var overlay = _epgOverlay;
+        _epgOverlay = null;
+        _overlayList = null;
+        _overlayChannels.Clear();
+        overlay?.Close();
+    }
+
+    private void RefreshOverlayListings()
+    {
+        if (_overlayList is null) return;
+        var currentId = (_overlayList.SelectedIndex >= 0 && _overlayList.SelectedIndex < _overlayChannels.Count)
+            ? _overlayChannels[_overlayList.SelectedIndex].Id : _playingChannel?.Id;
+        _overlayChannels = _visibleChannels.ToList();
+        var now = DateTimeOffset.UtcNow;
+        var shift = TimeSpan.FromMinutes(EpgOffsetStore.LoadMinutes());
+        var london = TimeZoneInfo.FindSystemTimeZoneById("GMT Standard Time");
+        var entries = new List<string>(_overlayChannels.Count);
+        foreach (var channel in _overlayChannels)
+        {
+            var programme = _epg.ForChannel(channel).FirstOrDefault(p =>
+                p.StartUtc + shift <= now && p.EndUtc + shift > now);
+            var next = _epg.ForChannel(channel).FirstOrDefault(p => p.StartUtc + shift > now);
+            var show = programme is null ? "No programme data" :
+                $"{TimeZoneInfo.ConvertTime(programme.StartUtc + shift, london):HH:mm}  {programme.Title}";
+            entries.Add($"{channel.Name}     |     {show}" +
+                (next is null ? "" : $"     •  Next: {next.Title}"));
+        }
+        _overlayList.ItemsSource = entries;
+        var index = _overlayChannels.FindIndex(c => c.Id == currentId);
+        _overlayList.SelectedIndex = index < 0 ? 0 : index;
+        if (_overlayList.SelectedItem is not null)
+            _overlayList.ScrollIntoView(_overlayList.SelectedItem);
+    }
+
+    private void MoveOverlaySelection(int delta)
+    {
+        if (_overlayList is null || _overlayList.Items.Count == 0) return;
+        _overlayList.SelectedIndex = Math.Clamp(_overlayList.SelectedIndex + delta, 0, _overlayList.Items.Count - 1);
+        _overlayList.ScrollIntoView(_overlayList.SelectedItem);
+    }
+
+    private void TuneOverlaySelection()
+    {
+        if (_overlayList is null || _overlayList.SelectedIndex < 0 ||
+            _overlayList.SelectedIndex >= _overlayChannels.Count) return;
+        var channel = _overlayChannels[_overlayList.SelectedIndex];
+        ChannelList.SelectedItem = _visibleChannels.FirstOrDefault(c => c.Id == channel.Id);
+        CloseEpgOverlay();
+        PlaySelectedChannel();
     }
 
     private void MoveSelection(int delta)
@@ -734,6 +881,7 @@ public partial class MainWindow : Window
         if (_closingInProgress) return;
 
         _closingInProgress = true;
+        CloseEpgOverlay();
         _gamepad.Dispose();
         _epgDownload?.Cancel();
         await StopPlaybackAsync();
