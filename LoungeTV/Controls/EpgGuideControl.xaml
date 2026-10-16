@@ -48,7 +48,7 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="CHANNEL" VerticalAlignment="Center" Margin="14,0"
                            Foreground="#FFCA39" FontWeight="Bold"/>
-                <Canvas Grid.Column="1" x:Name="TimeHeader" ClipToBounds="True"/>
+                <Canvas Grid.Column="1" x:Name="TimeHeader" ClipToBounds="True" SizeChanged="TimeHeader_SizeChanged"/>
             </Grid>
             <StackPanel Grid.Row="2" x:Name="RowsHost" VerticalAlignment="Top" />
             <Border Grid.Row="3" Background="#071A35" BorderBrush="#436A9C"
