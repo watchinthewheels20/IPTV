@@ -34,6 +34,7 @@ public partial class MainWindow : Window
     private readonly SemaphoreSlim _mediaGate = new(1, 1);
     private int _playbackRequest;
     private bool _receivedPlaying;
+    private bool _autoFullscreenPending;
     private bool _closingInProgress;
     private bool _closePermitted;
     private bool _connecting;
@@ -157,8 +158,7 @@ public partial class MainWindow : Window
                 {
                     ChannelList.SelectedItem = _visibleChannels.FirstOrDefault(c => c.Id == recent.Id);
                     ShowLiveTv();
-                    PlaySelectedChannel();
-                    ToggleFullscreen();
+                    _ = ResumeLastChannelAsync();
                 }
             }
         }
@@ -196,6 +196,37 @@ public partial class MainWindow : Window
             _connecting = false;
             ConnectButton.IsEnabled = RefreshButton.IsEnabled = true;
         }
+    }
+
+    private async Task ResumeLastChannelAsync()
+    {
+        // First make the browser and video surface visible and let WPF lay them out.
+        // Calling native playback while the VideoView is still being revealed is
+        // unreliable on some PCs, particularly during fullscreen transitions.
+        await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+        if (_closingInProgress || BrowsePanel.Visibility != Visibility.Visible) return;
+
+        _autoFullscreenPending = true;
+        await PlaySelectedChannelAsync();
+
+        // Startup-specific recovery: when a first attempt never reaches Playing,
+        // retry once after a clean stop (equivalent to the successful manual fix).
+        // Never loop indefinitely or retry if the viewer has changed channels.
+        var initialRequest = Volatile.Read(ref _playbackRequest);
+        var initialId = _playingChannel?.Id;
+        if (initialId is null) return;
+        await Task.Delay(TimeSpan.FromSeconds(12));
+        if (_closingInProgress || _receivedPlaying || !_autoFullscreenPending ||
+            Volatile.Read(ref _playbackRequest) != initialRequest ||
+            _playingChannel?.Id != initialId) return;
+
+        PlaybackDiagnostics.Note("Autoplay: first attempt did not reach Playing; retrying once");
+        await StopPlaybackAsync();
+        if (_closingInProgress || BrowsePanel.Visibility != Visibility.Visible) return;
+        ChannelList.SelectedItem = _visibleChannels.FirstOrDefault(c => c.Id == initialId);
+        _autoFullscreenPending = true;
+        await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+        await PlaySelectedChannelAsync();
     }
 
     private void ReportConnectionError(string message)
@@ -241,6 +272,7 @@ public partial class MainWindow : Window
 
     private void WatchGuideChannel(LiveChannel channel)
     {
+        _autoFullscreenPending = false;
         CategoryList.SelectedIndex = 0;
         SearchBox.Text = "";
         UpdateVisibleChannels();
@@ -317,6 +349,7 @@ public partial class MainWindow : Window
     private void ShowHome()
     {
         if (_api is null) return;
+        _autoFullscreenPending = false;
         if (_fullScreen) ToggleFullscreen();
         BrowsePanel.Visibility = Visibility.Collapsed;
         GuideView.Visibility = Visibility.Collapsed;
@@ -392,7 +425,16 @@ public partial class MainWindow : Window
         _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
         {
             if (_closingInProgress || _playingChannel is null) return;
-            if (confirmed) _receivedPlaying = true;
+            if (confirmed)
+            {
+                _receivedPlaying = true;
+                if (_autoFullscreenPending)
+                {
+                    _autoFullscreenPending = false;
+                    if (!_fullScreen && BrowsePanel.Visibility == Visibility.Visible)
+                        ToggleFullscreen();
+                }
+            }
             PlayerStatusText.Text = message;
         }));
     }
@@ -491,7 +533,7 @@ public partial class MainWindow : Window
             PlayerStatusText.Text = "Stream timed out. Try HLS/MPEG-TS or another channel.";
     }
 
-    private void StopPlayback() => _ = StopPlaybackAsync();
+    private void StopPlayback() { _autoFullscreenPending = false; _ = StopPlaybackAsync(); }
 
     private async Task StopPlaybackAsync()
     {
