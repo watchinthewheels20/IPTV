@@ -192,7 +192,8 @@ public partial class MainWindow : Window
         try
         {
             // XMLTV feeds can be large. Parse on a worker, never on the WPF UI thread.
-            var data = await Task.Run(() => client.GetEpgAsync(cts.Token), cts.Token);
+            var subscribedChannels = _allChannels.ToArray();
+            var data = await Task.Run(() => client.GetEpgAsync(subscribedChannels, cts.Token), cts.Token);
             if (cts.IsCancellationRequested || _api != client || _closingInProgress) return;
             _epg = data;
             GuideView.SetEpg(data);
