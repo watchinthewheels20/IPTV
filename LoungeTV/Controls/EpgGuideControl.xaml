@@ -9,6 +9,7 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
@@ -20,7 +21,8 @@
                 <TextBlock x:Name="EpgStatusText" DockPanel.Dock="Left" Text="Loading TV listings…"
                            FontSize="12" TextTrimming="CharacterEllipsis"
                            Foreground="#B6C9E2" VerticalAlignment="Center" Width="270"/>
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+            </DockPanel>
+            <WrapPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
                     <TextBlock Text="CATEGORY" Foreground="#FFCA39" FontSize="12" FontWeight="Bold"
                                VerticalAlignment="Center" Margin="0,0,6,0"/>
                     <ComboBox x:Name="EpgCategoryBox" Width="135" Margin="0,0,9,0"
@@ -44,9 +46,8 @@
                         <ComboBoxItem Content="+2h" Tag="120"/>
                     </ComboBox>
                     <Button Content="Refresh EPG" Click="Refresh_Click" Padding="11,8"/>
-                </StackPanel>
-            </DockPanel>
-            <Grid Grid.Row="1" Height="44" Background="#123C76" Margin="0,0,0,3">
+            </WrapPanel>
+            <Grid Grid.Row="2" Height="44" Background="#123C76" Margin="0,0,0,3">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="234"/>
                     <ColumnDefinition Width="*"/>
@@ -55,8 +56,8 @@
                            Foreground="#FFCA39" FontWeight="Bold"/>
                 <Canvas Grid.Column="1" x:Name="TimeHeader" ClipToBounds="True" SizeChanged="TimeHeader_SizeChanged"/>
             </Grid>
-            <StackPanel Grid.Row="2" x:Name="RowsHost" VerticalAlignment="Top" />
-            <Border Grid.Row="3" Background="#071A35" BorderBrush="#436A9C"
+            <StackPanel Grid.Row="3" x:Name="RowsHost" VerticalAlignment="Top" />
+            <Border Grid.Row="4" Background="#071A35" BorderBrush="#436A9C"
                     BorderThickness="1" Padding="16" Margin="0,9,0,0">
                 <StackPanel>
                     <TextBlock x:Name="SelectedProgrammeText" Text="Select a channel"
@@ -66,7 +67,7 @@
                                MaxHeight="55" Margin="0,7,0,0"/>
                 </StackPanel>
             </Border>
-            <DockPanel Grid.Row="4" Margin="1,12,0,0">
+            <DockPanel Grid.Row="5" Margin="1,12,0,0">
                 <TextBlock Text="D-pad: channels / time    A: watch    LB/RB: shift 30m    Y: category    B: back"
                            DockPanel.Dock="Left" VerticalAlignment="Center"
                            Foreground="#B4C7DD" FontSize="12"/>
