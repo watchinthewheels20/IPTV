@@ -117,6 +117,17 @@ public partial class MainWindow : Window
             if (channels.Count == 0)
                 throw new InvalidDataException("Login succeeded but this account has no accessible live channels.");
 
+            // Apply the UK-only view once for every navigation surface, including
+            // the full EPG, mini-banner, resume and the channel browser.
+            // A prefix must end at a separator (so 'UKRAINE' does not match).
+            var ukChannels = channels.Where(IsUkChannel).ToList();
+            if (ukChannels.Count == 0)
+                throw new InvalidDataException(
+                    "No UK-prefixed channels found. Expected channel names beginning UK:, UK |, UK -, UK_ or UK followed by a space.");
+            var ukCategoryIds = ukChannels.Select(c => c.CategoryId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var ukCategories = categories.Where(category => ukCategoryIds.Contains(category.Id)).ToList();
+
             // Only swap the active connection after the new one has loaded completely.
             var previousClient = _api;
             _api = newClient;
@@ -128,15 +139,15 @@ public partial class MainWindow : Window
             previousClient?.Dispose();
 
             _allChannels.Clear();
-            _allChannels.AddRange(channels);
+            _allChannels.AddRange(ukChannels);
             _categories.Clear();
-            _categories.Add(new ChannelCategory("*", "All channels"));
-            foreach (var category in categories) _categories.Add(category);
+            _categories.Add(new ChannelCategory("*", "All UK channels"));
+            foreach (var category in ukCategories) _categories.Add(category);
             CategoryList.SelectedIndex = 0;
             UpdateVisibleChannels();
             GuideView.SetChannels(_allChannels);
             GuideView.SetCategories(_categories);
-            HomeCategoryItems.ItemsSource = categories.Take(9).ToArray();
+            HomeCategoryItems.ItemsSource = ukCategories.Take(9).ToArray();
             UpdateResumeTile();
 
             var persisted = "";
@@ -158,7 +169,7 @@ public partial class MainWindow : Window
             GuideButton.Visibility = ChannelsButton.Visibility = HomeButton.Visibility =
                 AccountButton.Visibility = RefreshButton.Visibility = Visibility.Visible;
             FullScreenButton.Visibility = Visibility.Collapsed;
-            GeneralStatusText.Text = $"Connected · {channels.Count:N0} channels · {categories.Count:N0} categories.{persisted}";
+            GeneralStatusText.Text = $"UK channels · {ukChannels.Count:N0} of {channels.Count:N0} total · {ukCategories.Count:N0} categories.{persisted}";
             PlayerStatusText.Text = "Select a channel and press A, Enter or Watch channel.";
             GuideView.GoNow();
             GuideView.Focus();
@@ -243,6 +254,14 @@ public partial class MainWindow : Window
         _autoFullscreenPending = true;
         await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
         await PlaySelectedChannelAsync();
+    }
+
+    private static bool IsUkChannel(LiveChannel channel)
+    {
+        var name = channel.Name.TrimStart();
+        return name.StartsWith("UK", StringComparison.OrdinalIgnoreCase) &&
+            (name.Length == 2 || char.IsWhiteSpace(name[2]) ||
+             name[2] is ':' or '|' or '-' or '_');
     }
 
     private void ReportConnectionError(string message)
@@ -744,10 +763,43 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (key == Key.Enter && BrowsePanel.Visibility == Visibility.Visible &&
-            (ChannelList.IsKeyboardFocusWithin || CategoryList.IsKeyboardFocusWithin))
+        // Normal (non-fullscreen) channel browser: intercept arrows before WPF
+        // ListBox navigation, exactly as the XInput controller path does.
+        if (BrowsePanel.Visibility == Visibility.Visible)
         {
-            PlaySelectedChannel(); e.Handled = true;
+            if (key == Key.Left)
+            {
+                _focusChannels = false;
+                CategoryList.Focus();
+                e.Handled = true; return;
+            }
+            if (key == Key.Right)
+            {
+                _focusChannels = true;
+                ChannelList.Focus();
+                e.Handled = true; return;
+            }
+            if (key is Key.Up or Key.Down)
+            {
+                _focusChannels = ChannelList.IsKeyboardFocusWithin ||
+                                 !CategoryList.IsKeyboardFocusWithin;
+                MoveSelection(key == Key.Up ? -1 : 1);
+                e.Handled = true; return;
+            }
+            if (key is Key.Enter or Key.Return)
+            {
+                if (CategoryList.IsKeyboardFocusWithin)
+                {
+                    _focusChannels = true;
+                    ChannelList.Focus();
+                }
+                else
+                {
+                    _focusChannels = true;
+                    PlaySelectedChannel();
+                }
+                e.Handled = true; return;
+            }
         }
     }
 
