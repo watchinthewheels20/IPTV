@@ -1,0 +1,73 @@
+<UserControl x:Class="LoungeTV.Controls.EpgGuideControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Focusable="True" Background="#071B38"
+             Loaded="GuideLoaded" SizeChanged="GuideResized">
+    <Border Background="#0C2954" BorderBrush="#577CA9" BorderThickness="1"
+            Margin="14,0,14,9" Padding="14">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <DockPanel Grid.Row="0" LastChildFill="False" Margin="0,0,0,14">
+                <TextBlock DockPanel.Dock="Left" Text="TV GUIDE" FontSize="27"
+                           FontWeight="Bold" Foreground="#FFFFFF" VerticalAlignment="Center"
+                           Margin="0,0,20,0"/>
+                <TextBlock x:Name="EpgStatusText" DockPanel.Dock="Left" Text="Loading TV listings…"
+                           FontSize="12" TextTrimming="CharacterEllipsis"
+                           Foreground="#B6C9E2" VerticalAlignment="Center" Width="270"/>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Content="&#x25C0; 30m" Click="Earlier_Click" Padding="11,8" Margin="0,0,5,0"/>
+                    <Button Content="NOW" Click="Now_Click" Padding="11,8" Margin="0,0,5,0"/>
+                    <Button Content="30m &#x25B6;" Click="Later_Click" Padding="11,8" Margin="0,0,9,0"/>
+                    <TextBlock Text="EPG SHIFT" Foreground="#FFCA39" FontWeight="Bold"
+                               VerticalAlignment="Center" FontSize="12" Margin="0,0,7,0"/>
+                    <ComboBox x:Name="EpgOffsetBox" Width="88" VerticalAlignment="Center"
+                              SelectionChanged="EpgOffset_SelectionChanged" Margin="0,0,9,0">
+                        <ComboBoxItem Content="-2h" Tag="-120"/>
+                        <ComboBoxItem Content="-1h 30m" Tag="-90"/>
+                        <ComboBoxItem Content="-1h" Tag="-60"/>
+                        <ComboBoxItem Content="-30m" Tag="-30"/>
+                        <ComboBoxItem Content="0h" Tag="0"/>
+                        <ComboBoxItem Content="+30m" Tag="30"/>
+                        <ComboBoxItem Content="+1h" Tag="60"/>
+                        <ComboBoxItem Content="+1h 30m" Tag="90"/>
+                        <ComboBoxItem Content="+2h" Tag="120"/>
+                    </ComboBox>
+                    <Button Content="Refresh EPG" Click="Refresh_Click" Padding="11,8"/>
+                </StackPanel>
+            </DockPanel>
+            <Grid Grid.Row="1" Height="44" Background="#123C76" Margin="0,0,0,3">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="234"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="CHANNEL" VerticalAlignment="Center" Margin="14,0"
+                           Foreground="#FFCA39" FontWeight="Bold"/>
+                <Canvas Grid.Column="1" x:Name="TimeHeader" ClipToBounds="True"/>
+            </Grid>
+            <StackPanel Grid.Row="2" x:Name="RowsHost" VerticalAlignment="Top" />
+            <Border Grid.Row="3" Background="#071A35" BorderBrush="#436A9C"
+                    BorderThickness="1" Padding="16" Margin="0,9,0,0">
+                <StackPanel>
+                    <TextBlock x:Name="SelectedProgrammeText" Text="Select a channel"
+                               FontSize="18" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="SelectedProgrammeDescription" Text=""
+                               TextWrapping="Wrap" Foreground="#B9CCE4" FontSize="12"
+                               MaxHeight="55" Margin="0,7,0,0"/>
+                </StackPanel>
+            </Border>
+            <DockPanel Grid.Row="4" Margin="1,12,0,0">
+                <TextBlock Text="D-pad: channels / time    A or Enter: watch    B or Esc: back"
+                           DockPanel.Dock="Left" VerticalAlignment="Center"
+                           Foreground="#B4C7DD" FontSize="12"/>
+                <Button DockPanel.Dock="Right" Content="WATCH CHANNEL" Click="Watch_Click"
+                        Background="#24588C" Padding="15,9" FontWeight="Bold"/>
+            </DockPanel>
+        </Grid>
+    </Border>
+</UserControl>
