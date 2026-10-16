@@ -26,6 +26,7 @@ public partial class EpgGuideControl : UserControl
     private static readonly Brush Gold = Brush("#FFCC3D");
 
     private List<LiveChannel> _channels = new();
+    private List<LiveChannel> _allChannels = new();
     private EpgSnapshot _epg = EpgSnapshot.Empty;
     private int _selectedIndex;
     private DateTimeOffset _windowStart = RoundDown(DateTimeOffset.UtcNow);
@@ -54,8 +55,26 @@ public partial class EpgGuideControl : UserControl
 
     public void SetChannels(IEnumerable<LiveChannel> channels)
     {
+        _allChannels = channels.ToList();
+        FilterChannels();
+    }
+
+    public void SetCategories(IEnumerable<ChannelCategory> categories)
+    {
+        EpgCategoryBox.ItemsSource = categories.ToArray();
+        EpgCategoryBox.SelectedIndex = 0;
+        FilterChannels();
+    }
+
+    private void EpgCategory_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+        FilterChannels();
+
+    private void FilterChannels()
+    {
         var previous = SelectedChannel?.Id;
-        _channels = channels.ToList();
+        var id = (EpgCategoryBox.SelectedItem as ChannelCategory)?.Id ?? "*";
+        _channels = id == "*" ? _allChannels :
+            _allChannels.Where(c => c.CategoryId == id).ToList();
         _selectedIndex = Math.Max(0, _channels.FindIndex(c => c.Id == previous));
         Render();
     }
@@ -100,6 +119,10 @@ public partial class EpgGuideControl : UserControl
                 if (_cursor >= _windowStart.AddHours(2))
                     _windowStart = _windowStart.AddMinutes(30);
                 break;
+            case GamepadCommand.NextCategory:
+                if (EpgCategoryBox.Items.Count > 0)
+                    EpgCategoryBox.SelectedIndex = (EpgCategoryBox.SelectedIndex + 1) % EpgCategoryBox.Items.Count;
+                return;
             case GamepadCommand.ShiftEarlier:
                 ChangeOffset(-30);
                 return;
@@ -165,7 +188,7 @@ public partial class EpgGuideControl : UserControl
         }
     }
 
-    public bool IsEditingOffset => EpgOffsetBox.IsDropDownOpen;
+    public bool IsEditingPicker => EpgOffsetBox.IsDropDownOpen || EpgCategoryBox.IsDropDownOpen;
 
     private void EpgOffset_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
