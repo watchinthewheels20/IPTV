@@ -38,6 +38,7 @@ public partial class MainWindow : Window
     private bool _closePermitted;
     private bool _connecting;
     private bool _fullScreen;
+    private readonly DispatcherTimer _overlayRefreshTimer = new() { Interval = TimeSpan.FromMinutes(1) };
     private Window? _epgOverlay;
     private ListBox? _overlayList;
     private List<LiveChannel> _overlayChannels = new();
@@ -57,6 +58,7 @@ public partial class MainWindow : Window
         _searchTimer.Tick += (_, _) => { _searchTimer.Stop(); if (_allChannels.Count > 0) UpdateVisibleChannels(); };
         _gamepad.Command += HandleGamepad;
         _gamepad.Start();
+        _overlayRefreshTimer.Tick += (_, _) => RefreshOverlayListings();
 
         var (server, user, password) = SettingsStore.Load();
         ServerBox.Text = server;
@@ -65,6 +67,9 @@ public partial class MainWindow : Window
         RememberCheck.IsChecked = !string.IsNullOrEmpty(password);
         if (!string.IsNullOrEmpty(server))
             LoginMessage.Text = "Saved settings loaded. Select Connect to continue.";
+        if (!string.IsNullOrWhiteSpace(server) && !string.IsNullOrWhiteSpace(user) &&
+            !string.IsNullOrWhiteSpace(password))
+            Loaded += (_, _) => _ = ConnectAsync();
     }
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e) => await ConnectAsync();
@@ -785,15 +790,17 @@ public partial class MainWindow : Window
             Background = System.Windows.Media.Brushes.Transparent,
             ShowInTaskbar = false, ShowActivated = false,
             ResizeMode = ResizeMode.NoResize,
-            Topmost = true, Content = layout,
+            Content = layout,
             Left = Left, Top = Top, Width = ActualWidth, Height = ActualHeight
         };
         _epgOverlay.Show();
+        _overlayRefreshTimer.Start();
         RefreshOverlayListings();
     }
 
     private void CloseEpgOverlay()
     {
+        _overlayRefreshTimer.Stop();
         var overlay = _epgOverlay;
         _epgOverlay = null;
         _overlayList = null;
