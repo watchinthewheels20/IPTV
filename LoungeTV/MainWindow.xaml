@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
         xmlns:controls="clr-namespace:LoungeTV.Controls"
-        Title="LoungeTV — Classic Guide" Height="780" Width="1350"
-        MinHeight="570" MinWidth="1000" WindowStartupLocation="CenterScreen"
+        Title="LoungeTV" WindowStyle="None" WindowState="Maximized"
+        ResizeMode="CanResize" WindowStartupLocation="CenterScreen"
         Background="{StaticResource PageBrush}" Foreground="{StaticResource TextBrush}"
         PreviewKeyDown="Window_KeyDown" Closing="Window_Closing">
     <Grid x:Name="RootGrid">
@@ -14,12 +14,12 @@
             <RowDefinition Height="35" />
         </Grid.RowDefinitions>
 
-        <Grid x:Name="TopBar" Grid.Row="0" Margin="24,0">
+        <Grid x:Name="TopBar" Grid.Row="0" Margin="16,0">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="LOUNGE" Foreground="{StaticResource AccentBrush}" FontSize="23" FontWeight="Bold" />
                 <TextBlock Text="TV" FontSize="23" FontWeight="Bold" />
-                <TextBlock Text="  /  CLASSIC GUIDE" Margin="10,8,0,0" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                 <Button x:Name="GuideButton" Visibility="Collapsed" Content="TV Guide" Click="GuideButton_Click" Margin="0,0,9,0" Background="#24558B" />
@@ -27,7 +27,9 @@
                 <Button x:Name="HomeButton" Visibility="Collapsed" Content="Home" Click="HomeButton_Click" Margin="0,0,10,0" Background="#1A3C66" />
                 <Button x:Name="AccountButton" Visibility="Collapsed" Content="Account" Click="AccountButton_Click" Margin="0,0,10,0" />
                 <Button x:Name="RefreshButton" Visibility="Collapsed" Content="Refresh" Click="RefreshButton_Click" Margin="0,0,10,0" />
-                <Button x:Name="FullScreenButton" Visibility="Collapsed" Content="Full screen" Click="FullScreenButton_Click" />
+                <Button x:Name="FullScreenButton" Visibility="Collapsed" Content="Full screen" Click="FullScreenButton_Click" Margin="0,0,9,0" />
+                <Button Content="—" Width="42" Click="MinimiseButton_Click" ToolTip="Minimise LoungeTV" Margin="0,0,8,0" />
+                <Button Content="✕" Width="42" Click="CloseButton_Click" ToolTip="Close LoungeTV" Background="#703047" />
             </StackPanel>
         </Grid>
 
@@ -98,7 +100,7 @@
                                                    Foreground="{StaticResource MutedBrush}" FontSize="13" Margin="0,5,0,0"/>
                                     </StackPanel>
                                 </Button>
-                                <TextBlock Text="Use your gamepad D-pad and A to select."
+                                <TextBlock Text="Use the remote arrows and OK to select."
                                            Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="5,17,0,5"/>
                             </StackPanel>
                         </Border>
@@ -136,11 +138,11 @@
 
             <Grid x:Name="BrowsePanel" Visibility="Collapsed" Margin="14,0,14,9">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition x:Name="CategoriesColumn" Width="230" />
-                    <ColumnDefinition x:Name="ChannelsColumn" Width="360" />
-                    <ColumnDefinition Width="*" MinWidth="250" />
+                    <ColumnDefinition x:Name="CategoriesColumn" Width="215" />
+                    <ColumnDefinition x:Name="ChannelsColumn" Width="325" />
+                    <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Border x:Name="CategoryPanel" Grid.Column="0" Background="{StaticResource PanelBrush}" CornerRadius="3" Margin="0,0,9,0" Padding="8">
+                <Border x:Name="CategoryPanel" Grid.Column="0" Background="{StaticResource PanelBrush}" BorderBrush="#5477A0" BorderThickness="2" CornerRadius="3" Margin="0,0,9,0" Padding="8">
                     <DockPanel>
                         <TextBlock DockPanel.Dock="Top" Text="TV GUIDE   /   CATEGORIES" FontWeight="SemiBold" FontSize="12"
                                    Foreground="{StaticResource AccentBrush}" Margin="13,13,8,12" />
@@ -148,7 +150,7 @@
                                  SelectionChanged="CategoryList_SelectionChanged" DisplayMemberPath="DisplayName" />
                     </DockPanel>
                 </Border>
-                <Border x:Name="ChannelPanel" Grid.Column="1" Background="{StaticResource PanelBrush}" CornerRadius="12" Margin="0,0,9,0" Padding="8">
+                <Border x:Name="ChannelPanel" Grid.Column="1" Background="{StaticResource PanelBrush}" BorderBrush="#5477A0" BorderThickness="2" CornerRadius="3" Margin="0,0,9,0" Padding="8">
                     <DockPanel LastChildFill="True">
                         <StackPanel DockPanel.Dock="Top" Margin="8,10,8,10">
                             <TextBlock Text="CHANNEL LIST" FontWeight="SemiBold" FontSize="12"
@@ -196,7 +198,7 @@
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <TextBlock x:Name="GeneralStatusText" Text="Ready to connect" FontSize="11"
                        Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="1" Text="Guide: time left/right  channels up/down    A: watch    B: back"
+            <TextBlock Grid.Column="1" Text="Arrows: navigate    OK: select    Back: return    F11: toggle video"
                        FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
         </Grid>
     </Grid>
