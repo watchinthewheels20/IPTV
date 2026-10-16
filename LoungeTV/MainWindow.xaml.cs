@@ -54,7 +54,7 @@ public partial class MainWindow : Window
     private int _bannerProgrammeCount;
     private bool _focusChannels = true;
     private DispatcherOperation? _scrollOperation;
-    private WindowState _previousWindowState = WindowState.Normal;
+    private WindowState _previousWindowState = WindowState.Maximized;
     private Thickness _normalBrowseMargin;
 
     public MainWindow()
@@ -63,6 +63,7 @@ public partial class MainWindow : Window
         CategoryList.ItemsSource = _categories;
         ChannelList.ItemsSource = _visibleChannels;
         _normalBrowseMargin = BrowsePanel.Margin;
+        UpdateBrowseFocus();
         GuideView.WatchRequested += WatchGuideChannel;
         GuideView.RefreshRequested += () => { if (_api is not null) _ = LoadEpgAsync(_api); };
         _searchTimer.Tick += (_, _) => { _searchTimer.Stop(); if (_allChannels.Count > 0) UpdateVisibleChannels(); };
@@ -124,9 +125,17 @@ public partial class MainWindow : Window
             if (ukChannels.Count == 0)
                 throw new InvalidDataException(
                     "No UK-prefixed channels found. Expected channel names beginning UK:, UK |, UK -, UK_ or UK followed by a space.");
+            // Providers sometimes place UK-labelled streams under unrelated VIP/US
+            // packages. Exclude the entire package, not just its display entry.
+            var blockedIds = categories.Where(c => IsExcludedCategory(c.Name))
+                .Select(c => c.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            ukChannels = ukChannels.Where(c => !blockedIds.Contains(c.CategoryId)).ToList();
+            if (ukChannels.Count == 0)
+                throw new InvalidDataException("UK-prefixed channels exist, but none remain after excluded packages were removed.");
             var ukCategoryIds = ukChannels.Select(c => c.CategoryId)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var ukCategories = categories.Where(category => ukCategoryIds.Contains(category.Id)).ToList();
+            var ukCategories = categories.Where(category =>
+                ukCategoryIds.Contains(category.Id) && !IsExcludedCategory(category.Name)).ToList();
 
             // Only swap the active connection after the new one has loaded completely.
             var previousClient = _api;
@@ -256,6 +265,16 @@ public partial class MainWindow : Window
         await PlaySelectedChannelAsync();
     }
 
+    private static bool IsExcludedCategory(string name)
+    {
+        var value = name.TrimStart();
+        // Category prefixes are provider-defined; remove explicit unwanted
+        // US and VIP/VPI groups, including VIP Apple Formula 1 / US F1 MotoGP.
+        return new[] { "US", "USA", "VIP", "VPI" }.Any(prefix =>
+            value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+            (value.Length == prefix.Length || !char.IsLetterOrDigit(value[prefix.Length])));
+    }
+
     private static bool IsUkChannel(LiveChannel channel)
     {
         var name = channel.Name.TrimStart();
@@ -379,6 +398,7 @@ public partial class MainWindow : Window
         if (focusSearch) SearchBox.Focus();
         else ChannelList.Focus();
         _focusChannels = true;
+        UpdateBrowseFocus();
     }
 
     private void ShowHome()
@@ -627,6 +647,8 @@ public partial class MainWindow : Window
     }
 
     private void FullScreenButton_Click(object sender, RoutedEventArgs e) => ToggleFullscreen();
+    private void MinimiseButton_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+    private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
 
     private void ToggleFullscreen()
     {
@@ -635,8 +657,6 @@ public partial class MainWindow : Window
         if (!_fullScreen)
         {
             _previousWindowState = WindowState;
-            WindowState = WindowState.Normal;
-            WindowStyle = WindowStyle.None;
             WindowState = WindowState.Maximized;
             RootGrid.RowDefinitions[0].Height = new GridLength(0);
             RootGrid.RowDefinitions[2].Height = new GridLength(0);
@@ -650,9 +670,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            WindowState = WindowState.Normal;
-            WindowStyle = WindowStyle.SingleBorderWindow;
-            WindowState = _previousWindowState;
+            WindowState = WindowState.Maximized;
             RootGrid.RowDefinitions[0].Height = new GridLength(70);
             RootGrid.RowDefinitions[2].Height = new GridLength(35);
             TopBar.Visibility = StatusBar.Visibility = Visibility.Visible;
@@ -664,6 +682,7 @@ public partial class MainWindow : Window
             PlayerContainerGrid.RowDefinitions[2].Height = GridLength.Auto;
             _fullScreen = false;
             ChannelList.Focus();
+            UpdateBrowseFocus();
         }
     }
 
@@ -771,18 +790,21 @@ public partial class MainWindow : Window
             {
                 _focusChannels = false;
                 CategoryList.Focus();
+                UpdateBrowseFocus();
                 e.Handled = true; return;
             }
             if (key == Key.Right)
             {
                 _focusChannels = true;
                 ChannelList.Focus();
+                UpdateBrowseFocus();
                 e.Handled = true; return;
             }
             if (key is Key.Up or Key.Down)
             {
                 _focusChannels = ChannelList.IsKeyboardFocusWithin ||
                                  !CategoryList.IsKeyboardFocusWithin;
+                UpdateBrowseFocus();
                 MoveSelection(key == Key.Up ? -1 : 1);
                 e.Handled = true; return;
             }
@@ -792,6 +814,7 @@ public partial class MainWindow : Window
                 {
                     _focusChannels = true;
                     ChannelList.Focus();
+                    UpdateBrowseFocus();
                 }
                 else
                 {
@@ -863,10 +886,12 @@ public partial class MainWindow : Window
             case GamepadCommand.Left:
                 _focusChannels = false;
                 CategoryList.Focus();
+                UpdateBrowseFocus();
                 break;
             case GamepadCommand.Right:
                 _focusChannels = true;
                 ChannelList.Focus();
+                UpdateBrowseFocus();
                 break;
             case GamepadCommand.Up:
                 MoveSelection(-1);
@@ -1037,6 +1062,20 @@ public partial class MainWindow : Window
         ChannelList.SelectedItem = channel;
         CloseEpgOverlay();
         if (changed) PlaySelectedChannel();
+    }
+
+    private void UpdateBrowseFocus()
+    {
+        // Highlight the active column independently of selected list items.
+        if (CategoryPanel is null || ChannelPanel is null) return;
+        var active = new System.Windows.Media.SolidColorBrush(
+            System.Windows.Media.Color.FromRgb(255, 204, 57));
+        var inactive = new System.Windows.Media.SolidColorBrush(
+            System.Windows.Media.Color.FromRgb(84, 119, 160));
+        CategoryPanel.BorderBrush = _focusChannels ? inactive : active;
+        ChannelPanel.BorderBrush = _focusChannels ? active : inactive;
+        CategoryPanel.BorderThickness = _focusChannels ? new Thickness(2) : new Thickness(4);
+        ChannelPanel.BorderThickness = _focusChannels ? new Thickness(4) : new Thickness(2);
     }
 
     private void MoveSelection(int delta)
