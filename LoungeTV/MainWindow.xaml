@@ -6,7 +6,7 @@
         Title="LoungeTV — Classic Guide" Height="780" Width="1350"
         MinHeight="570" MinWidth="1000" WindowStartupLocation="CenterScreen"
         Background="{StaticResource PageBrush}" Foreground="{StaticResource TextBrush}"
-        KeyDown="Window_KeyDown" Closing="Window_Closing">
+        PreviewKeyDown="Window_KeyDown" Closing="Window_Closing">
     <Grid x:Name="RootGrid">
         <Grid.RowDefinitions>
             <RowDefinition Height="70" />
