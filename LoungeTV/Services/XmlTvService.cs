@@ -19,7 +19,8 @@ public static class XmlTvService
     private static readonly string[] DateFormats = { "yyyyMMddHHmmss", "yyyyMMddHHmm" };
 
     public static async Task<EpgSnapshot> LoadAsync(
-        HttpClient http, Uri xmltvUri, CancellationToken cancellationToken = default)
+        HttpClient http, Uri xmltvUri, IReadOnlyCollection<LiveChannel>? activeChannels = null,
+        CancellationToken cancellationToken = default)
     {
         using var response = await http.GetAsync(xmltvUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -31,11 +32,24 @@ public static class XmlTvService
             XmlResolver = null,
             IgnoreComments = true,
             IgnoreWhitespace = true,
-            MaxCharactersInDocument = 150_000_000
+            MaxCharactersInDocument = 750_000_000
         });
 
         var programmes = new Dictionary<string, List<EpgProgramme>>(StringComparer.OrdinalIgnoreCase);
         var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var activeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (activeChannels is not null)
+        {
+            foreach (var channel in activeChannels)
+            {
+                if (!string.IsNullOrWhiteSpace(channel.EpgChannelId)) ids.Add(channel.EpgChannelId);
+                ids.Add(channel.Id.ToString(CultureInfo.InvariantCulture));
+                activeNames.Add(channel.Name.Trim());
+                activeNames.Add(EpgSnapshot.NormaliseChannelName(channel.Name));
+            }
+        }
+
         var min = DateTimeOffset.UtcNow.AddHours(-12);
         var max = DateTimeOffset.UtcNow.AddDays(4);
         var count = 0;
@@ -53,13 +67,21 @@ public static class XmlTvService
                 foreach (var name in element.Elements().Where(x => x.Name.LocalName == "display-name"))
                 {
                     var text = name.Value.Trim();
-                    if (text.Length > 0) names.TryAdd(text, id);
+                    if (text.Length == 0) continue;
+                    var normalised = EpgSnapshot.NormaliseChannelName(text);
+                    if (activeChannels is null || activeNames.Contains(text) || activeNames.Contains(normalised))
+                    {
+                        names.TryAdd(text, id);
+                        names.TryAdd(normalised, id);
+                        ids.Add(id);
+                    }
                 }
             }
             else if (reader.LocalName == "programme")
             {
                 var id = reader.GetAttribute("channel");
                 if (string.IsNullOrWhiteSpace(id) ||
+                    (activeChannels is not null && !ids.Contains(id)) ||
                     !TryParseTimestamp(reader.GetAttribute("start"), out var start) ||
                     !TryParseTimestamp(reader.GetAttribute("stop"), out var end) ||
                     end <= start || start > max || end < min)
