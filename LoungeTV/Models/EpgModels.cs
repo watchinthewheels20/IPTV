@@ -33,8 +33,8 @@ public sealed class EpgSnapshot
 
     public static string NormaliseChannelName(string value)
     {
-        var name = Regex.Replace(value.Trim(), @"^(UK|GB)\\s*[:|]\\s*", "", RegexOptions.IgnoreCase);
-        return Regex.Replace(name, @"\\s+(FHD|UHD|HD|SD|4K)$", "", RegexOptions.IgnoreCase).Trim();
+        var name = Regex.Replace(value.Trim(), @"^(UK|GB)\s*[:|]\s*", "", RegexOptions.IgnoreCase);
+        return Regex.Replace(name, @"\s+(FHD|UHD|HD|SD|4K)$", "", RegexOptions.IgnoreCase).Trim();
     }
 
     public IReadOnlyList<EpgProgramme> ForChannel(LiveChannel channel)
