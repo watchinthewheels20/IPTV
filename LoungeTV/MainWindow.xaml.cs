@@ -41,8 +41,14 @@ public partial class MainWindow : Window
     private bool _fullScreen;
     private readonly DispatcherTimer _overlayRefreshTimer = new() { Interval = TimeSpan.FromMinutes(1) };
     private Window? _epgOverlay;
-    private ListBox? _overlayList;
-    private List<LiveChannel> _overlayChannels = new();
+    private TextBlock? _bannerChannel;
+    private TextBlock? _bannerClock;
+    private TextBlock? _bannerNow;
+    private TextBlock? _bannerNext;
+    private TextBlock? _bannerHint;
+    private System.Windows.Controls.ProgressBar? _bannerProgress;
+    private int _bannerSelectedIndex;
+    private int _bannerProgrammeIndex;
     private bool _focusChannels = true;
     private DispatcherOperation? _scrollOperation;
     private WindowState _previousWindowState = WindowState.Normal;
@@ -616,6 +622,8 @@ public partial class MainWindow : Window
             CategoriesColumn.Width = ChannelsColumn.Width = new GridLength(0);
             CategoryPanel.Visibility = ChannelPanel.Visibility = Visibility.Collapsed;
             BrowsePanel.Margin = new Thickness(0);
+            PlayerContainerGrid.RowDefinitions[0].Height = new GridLength(0);
+            PlayerContainerGrid.RowDefinitions[2].Height = new GridLength(0);
             _fullScreen = true;
         }
         else
@@ -630,15 +638,17 @@ public partial class MainWindow : Window
             ChannelsColumn.Width = new GridLength(325);
             CategoryPanel.Visibility = ChannelPanel.Visibility = Visibility.Visible;
             BrowsePanel.Margin = _normalBrowseMargin;
+            PlayerContainerGrid.RowDefinitions[0].Height = GridLength.Auto;
+            PlayerContainerGrid.RowDefinitions[2].Height = GridLength.Auto;
             _fullScreen = false;
+            ChannelList.Focus();
         }
     }
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
-        // Rii i25: front D-pad emits arrow keys; OK emits Enter with air-mouse off.
-        // Menu is typically Apps/ContextMenu; PageUp/PageDown are dedicated keys.
-        // Handle keys on PreviewKeyDown so a focused ListBox cannot swallow them.
+        // This handler is registered as PreviewKeyDown in XAML so the remote's
+        // arrows / OK are not swallowed by the focused WPF ListBox.
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         if (LoginPanel.Visibility == Visibility.Visible) return;
         if (key is Key.BrowserBack or Key.Escape or Key.Back)
@@ -650,62 +660,63 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
+
+        // The Rii i25 usually presents as a keyboard, not an XInput controller.
+        // Apps/Menu is the player/fullscreen toggle; OK opens the compact banner.
+        if (key is Key.Apps or Key.F11)
+        {
+            if (BrowsePanel.Visibility == Visibility.Visible) ToggleFullscreen();
+            else if (GuideView.Visibility == Visibility.Visible) ShowLiveTv();
+            e.Handled = true;
+            return;
+        }
+
         if (_fullScreen)
         {
-            if (key is Key.Apps or Key.G or Key.Tab or Key.PageUp or Key.PageDown)
+            if (key is Key.PageUp or Key.PageDown or Key.G or Key.Tab)
             {
                 ToggleEpgOverlay(); e.Handled = true; return;
             }
             if (_epgOverlay is not null)
             {
-                if (key is Key.Up or Key.Down)
-                    MoveOverlaySelection(key == Key.Up ? -1 : 1);
-                else if (key is Key.Enter or Key.Return)
-                    TuneOverlaySelection();
+                if (key is Key.Up or Key.Down) MoveOverlaySelection(key == Key.Up ? -1 : 1);
+                else if (key is Key.Left or Key.Right)
+                {
+                    _bannerProgrammeIndex = key == Key.Left ? 0 : 1;
+                    RefreshOverlayListings();
+                }
+                else if (key is Key.Enter or Key.Return) TuneOverlaySelection();
                 else return;
                 e.Handled = true;
                 return;
+            }
+            if (key is Key.Enter or Key.Return or Key.Left or Key.Right)
+            {
+                ToggleEpgOverlay(); e.Handled = true; return;
             }
             if (key is Key.Up or Key.Down)
             {
                 ChangeChannel(key == Key.Up ? -1 : 1);
                 e.Handled = true; return;
             }
-            if (key is Key.Enter or Key.Return)
-            {
-                ToggleEpgOverlay(); e.Handled = true; return;
-            }
-            if (key is Key.Left or Key.Right)
-            {
-                ToggleEpgOverlay(); e.Handled = true; return;
-            }
         }
-        if (_fullScreen && e.Key is Key.G or Key.Tab)
-        {
-            ToggleEpgOverlay(); e.Handled = true; return;
-        }
-        if (_epgOverlay is not null)
-        {
-            if (e.Key is Key.Escape or Key.Back) { CloseEpgOverlay(); e.Handled = true; return; }
-            if (e.Key is Key.Up or Key.Down) { MoveOverlaySelection(e.Key == Key.Up ? -1 : 1); e.Handled = true; return; }
-            if (e.Key == Key.Enter) { TuneOverlaySelection(); e.Handled = true; return; }
-        }
+
         if (GuideView.Visibility == Visibility.Visible)
         {
             if (GuideView.IsEditingPicker) return;
-            if (e.Key == Key.OemOpenBrackets || e.Key == Key.PageUp)
+            if (key is Key.OemOpenBrackets or Key.PageUp)
             {
                 GuideView.ChangeOffset(-30); e.Handled = true; return;
             }
-            if (e.Key == Key.OemCloseBrackets || e.Key == Key.PageDown)
+            if (key is Key.OemCloseBrackets or Key.PageDown)
             {
                 GuideView.ChangeOffset(30); e.Handled = true; return;
             }
-            if (e.Key == Key.C)
+            if (key == Key.C)
             {
                 GuideView.Navigate(GamepadCommand.NextCategory); e.Handled = true; return;
             }
-            var command = e.Key switch
+            var navigation = key switch
             {
                 Key.Up => GamepadCommand.Up,
                 Key.Down => GamepadCommand.Down,
@@ -714,24 +725,18 @@ public partial class MainWindow : Window
                 Key.Enter => GamepadCommand.Select,
                 _ => (GamepadCommand?)null
             };
-            if (command is { } navigation)
+            if (navigation is { } command)
             {
-                GuideView.Navigate(navigation);
-                e.Handled = true;
-                return;
-            }
-            if (e.Key is Key.Escape or Key.Back)
-            {
-                ShowLiveTv();
+                GuideView.Navigate(command);
                 e.Handled = true;
                 return;
             }
         }
 
         if (HomePanel.Visibility == Visibility.Visible &&
-            e.Key is Key.Up or Key.Down or Key.Left or Key.Right)
+            key is Key.Up or Key.Down or Key.Left or Key.Right)
         {
-            var direction = e.Key is Key.Up or Key.Left ?
+            var direction = key is Key.Up or Key.Left ?
                 FocusNavigationDirection.Previous : FocusNavigationDirection.Next;
             if (Keyboard.FocusedElement is UIElement current)
                 current.MoveFocus(new TraversalRequest(direction));
@@ -740,20 +745,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (e.Key == Key.F11 && BrowsePanel.Visibility == Visibility.Visible)
-        {
-            ToggleFullscreen(); e.Handled = true;
-        }
-        else if (e.Key == Key.Escape && _fullScreen)
-        {
-            ToggleFullscreen(); e.Handled = true;
-        }
-        else if (e.Key == Key.Escape && BrowsePanel.Visibility == Visibility.Visible)
-        {
-            ShowHome(); e.Handled = true;
-        }
-        else if (e.Key == Key.Enter && BrowsePanel.Visibility == Visibility.Visible &&
-                 (ChannelList.IsKeyboardFocusWithin || CategoryList.IsKeyboardFocusWithin))
+        if (key == Key.Enter && BrowsePanel.Visibility == Visibility.Visible &&
+            (ChannelList.IsKeyboardFocusWithin || CategoryList.IsKeyboardFocusWithin))
         {
             PlaySelectedChannel(); e.Handled = true;
         }
@@ -836,55 +829,70 @@ public partial class MainWindow : Window
     }
 
 
-    // A separate transparent top-level window is required: LibVLC's native
-    // VideoView is hosted in an HWND and ordinary sibling WPF panels sit behind it.
+    // A separate transparent owned WPF window avoids the HWND airspace issue
+    // introduced by LibVLC's native video surface. No second stream is created.
     private void ToggleEpgOverlay()
     {
         if (!_fullScreen) return;
         if (_epgOverlay is not null) { CloseEpgOverlay(); return; }
 
-        _overlayList = new ListBox
-        {
-            FontSize = 19, Foreground = System.Windows.Media.Brushes.White,
-            Background = System.Windows.Media.Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            HorizontalContentAlignment = HorizontalAlignment.Stretch
-        };
-        _overlayList.SelectionChanged += (_, _) => { };
-        var title = new TextBlock
-        {
-            Text = "TV GUIDE   •   Menu / PgUp: close   •   OK: watch   •   Back: close",
-            FontSize = 19, FontWeight = FontWeights.Bold, Foreground =
-                System.Windows.Media.Brushes.Gold, Margin = new Thickness(18, 12, 10, 12)
-        };
-        var panel = new DockPanel();
-        DockPanel.SetDock(title, Dock.Top);
-        panel.Children.Add(title);
-        panel.Children.Add(_overlayList);
+        _bannerSelectedIndex = Math.Max(0, _visibleChannels.FindIndex(
+            c => c.Id == _playingChannel?.Id));
+        _bannerProgrammeIndex = 0;
+        var gold = new System.Windows.Media.SolidColorBrush(
+            System.Windows.Media.Color.FromRgb(255, 206, 61));
+        var white = System.Windows.Media.Brushes.White;
+        _bannerChannel = new TextBlock { FontSize = 18, FontWeight = FontWeights.Bold, Foreground = white };
+        _bannerClock = new TextBlock { FontSize = 15, Foreground = white, HorizontalAlignment = HorizontalAlignment.Right };
+        _bannerNow = new TextBlock { FontSize = 20, Foreground = gold, TextTrimming = TextTrimming.CharacterEllipsis };
+        _bannerNext = new TextBlock { FontSize = 18, Foreground = white, TextTrimming = TextTrimming.CharacterEllipsis };
+        _bannerHint = new TextBlock { FontSize = 13, Foreground = white, Margin = new Thickness(0, 10, 0, 0) };
+        _bannerProgress = new ProgressBar { Height = 4, Minimum = 0, Maximum = 100, Foreground = gold,
+            Background = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromRgb(25, 60, 98)), Margin = new Thickness(0, 8, 0, 0) };
+
+        var header = new Grid();
+        header.ColumnDefinitions.Add(new ColumnDefinition());
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.Children.Add(_bannerChannel);
+        Grid.SetColumn(_bannerClock, 1);
+        header.Children.Add(_bannerClock);
+
+        var stack = new StackPanel();
+        stack.Children.Add(header);
+        stack.Children.Add(new Separator { Margin = new Thickness(0, 9, 0, 10),
+            Background = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromRgb(65, 105, 151)) });
+        stack.Children.Add(_bannerNow);
+        stack.Children.Add(_bannerNext);
+        stack.Children.Add(_bannerProgress);
+        stack.Children.Add(_bannerHint);
+
         var surface = new Border
         {
             Background = new System.Windows.Media.SolidColorBrush(
-                System.Windows.Media.Color.FromArgb(215, 8, 26, 56)),
-            BorderBrush = System.Windows.Media.Brushes.SteelBlue,
+                System.Windows.Media.Color.FromArgb(218, 9, 37, 79)),
+            BorderBrush = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromRgb(71, 116, 166)),
             BorderThickness = new Thickness(1),
-            Child = panel,
-            Padding = new Thickness(14)
+            Padding = new Thickness(19, 14, 19, 11),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Width = Math.Min(960, Math.Max(470, ActualWidth * .82)),
+            Margin = new Thickness(0, 0, 0, Math.Max(28, ActualHeight * .075)),
+            Child = stack
         };
         var layout = new Grid { Background = System.Windows.Media.Brushes.Transparent };
-        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(2, GridUnitType.Star) });
-        Grid.SetRow(surface, 1);
         layout.Children.Add(surface);
-
         _epgOverlay = new Window
         {
             Owner = this, WindowStyle = WindowStyle.None,
-            AllowsTransparency = true,
+            AllowsTransparency = true, ShowInTaskbar = false,
+            ShowActivated = false, ResizeMode = ResizeMode.NoResize,
             Background = System.Windows.Media.Brushes.Transparent,
-            ShowInTaskbar = false, ShowActivated = false,
-            ResizeMode = ResizeMode.NoResize,
-            Content = layout,
-            Left = Left, Top = Top, Width = ActualWidth, Height = ActualHeight
+            Content = layout, Left = Left, Top = Top,
+            Width = ActualWidth, Height = ActualHeight,
+            IsHitTestVisible = false
         };
         _epgOverlay.Show();
         _overlayRefreshTimer.Start();
@@ -896,53 +904,57 @@ public partial class MainWindow : Window
         _overlayRefreshTimer.Stop();
         var overlay = _epgOverlay;
         _epgOverlay = null;
-        _overlayList = null;
-        _overlayChannels.Clear();
+        _bannerChannel = _bannerClock = _bannerNow = _bannerNext = _bannerHint = null;
+        _bannerProgress = null;
         overlay?.Close();
     }
 
     private void RefreshOverlayListings()
     {
-        if (_overlayList is null) return;
-        var currentId = (_overlayList.SelectedIndex >= 0 && _overlayList.SelectedIndex < _overlayChannels.Count)
-            ? _overlayChannels[_overlayList.SelectedIndex].Id : _playingChannel?.Id;
-        _overlayChannels = _visibleChannels.ToList();
+        if (_epgOverlay is null || _bannerChannel is null || _bannerClock is null ||
+            _bannerNow is null || _bannerNext is null || _bannerHint is null || _bannerProgress is null)
+            return;
+        if (_visibleChannels.Count == 0) return;
+        _bannerSelectedIndex = Math.Clamp(_bannerSelectedIndex, 0, _visibleChannels.Count - 1);
+        var channel = _visibleChannels[_bannerSelectedIndex];
         var now = DateTimeOffset.UtcNow;
         var shift = TimeSpan.FromMinutes(EpgOffsetStore.LoadMinutes());
         var london = TimeZoneInfo.FindSystemTimeZoneById("GMT Standard Time");
-        var entries = new List<string>(_overlayChannels.Count);
-        foreach (var channel in _overlayChannels)
-        {
-            var programme = _epg.ForChannel(channel).FirstOrDefault(p =>
-                p.StartUtc + shift <= now && p.EndUtc + shift > now);
-            var next = _epg.ForChannel(channel).FirstOrDefault(p => p.StartUtc + shift > now);
-            var show = programme is null ? "No programme data" :
-                $"{TimeZoneInfo.ConvertTime(programme.StartUtc + shift, london):HH:mm}  {programme.Title}";
-            entries.Add($"{channel.Name}     |     {show}" +
-                (next is null ? "" : $"     •  Next: {next.Title}"));
-        }
-        _overlayList.ItemsSource = entries;
-        var index = _overlayChannels.FindIndex(c => c.Id == currentId);
-        _overlayList.SelectedIndex = index < 0 ? 0 : index;
-        if (_overlayList.SelectedItem is not null)
-            _overlayList.ScrollIntoView(_overlayList.SelectedItem);
+        var programmes = _epg.ForChannel(channel);
+        var playing = programmes.FirstOrDefault(p => p.StartUtc + shift <= now && p.EndUtc + shift > now);
+        var next = programmes.FirstOrDefault(p => p.StartUtc + shift > now);
+        static string TimeLabel(DateTimeOffset time, TimeZoneInfo zone) =>
+            TimeZoneInfo.ConvertTime(time, zone).ToString("HH:mm");
+        _bannerChannel.Text = channel.DisplayName + (_playingChannel?.Id == channel.Id ? "   • LIVE" : "   • PREVIEW");
+        _bannerClock.Text = TimeZoneInfo.ConvertTime(now, london).ToString("ddd dd MMM  HH:mm");
+        _bannerNow.Text = playing is null ? "NOW     No programme information" :
+            $"NOW     {TimeLabel(playing.StartUtc + shift, london)}–{TimeLabel(playing.EndUtc + shift, london)}   {playing.Title}";
+        _bannerNext.Text = next is null ? "NEXT    No programme information" :
+            $"NEXT    {TimeLabel(next.StartUtc + shift, london)}   {next.Title}";
+        _bannerNow.FontWeight = _bannerProgrammeIndex == 0 ? FontWeights.Bold : FontWeights.Normal;
+        _bannerNext.FontWeight = _bannerProgrammeIndex == 1 ? FontWeights.Bold : FontWeights.Normal;
+        _bannerHint.Text = "▲▼ Browse channels    ◄► Now / Next    OK Tune    Back Close    Menu Minimise";
+        _bannerProgress.Value = playing is null ? 0 : Math.Clamp(
+            (now - (playing.StartUtc + shift)).TotalSeconds /
+            Math.Max(1, (playing.EndUtc - playing.StartUtc).TotalSeconds) * 100, 0, 100);
     }
 
     private void MoveOverlaySelection(int delta)
     {
-        if (_overlayList is null || _overlayList.Items.Count == 0) return;
-        _overlayList.SelectedIndex = Math.Clamp(_overlayList.SelectedIndex + delta, 0, _overlayList.Items.Count - 1);
-        _overlayList.ScrollIntoView(_overlayList.SelectedItem);
+        if (_epgOverlay is null || _visibleChannels.Count == 0) return;
+        _bannerSelectedIndex = Math.Clamp(_bannerSelectedIndex + delta, 0, _visibleChannels.Count - 1);
+        _bannerProgrammeIndex = 0;
+        RefreshOverlayListings();
     }
 
     private void TuneOverlaySelection()
     {
-        if (_overlayList is null || _overlayList.SelectedIndex < 0 ||
-            _overlayList.SelectedIndex >= _overlayChannels.Count) return;
-        var channel = _overlayChannels[_overlayList.SelectedIndex];
-        ChannelList.SelectedItem = _visibleChannels.FirstOrDefault(c => c.Id == channel.Id);
+        if (_epgOverlay is null || _visibleChannels.Count == 0) return;
+        var channel = _visibleChannels[_bannerSelectedIndex];
+        var changed = _playingChannel?.Id != channel.Id;
+        ChannelList.SelectedItem = channel;
         CloseEpgOverlay();
-        PlaySelectedChannel();
+        if (changed) PlaySelectedChannel();
     }
 
     private void MoveSelection(int delta)
