@@ -247,7 +247,7 @@ public partial class EpgGuideControl : UserControl
             return;
         }
 
-        var count = Math.Clamp((int)((ActualHeight - 225) / 54), 4, 8);
+        var count = Math.Clamp((int)((ActualHeight - 280) / 54), 3, 8);
         var first = Math.Clamp(_selectedIndex - count / 2, 0, Math.Max(0, _channels.Count - count));
         var last = Math.Min(_channels.Count, first + count);
         for (var index = first; index < last; index++)
