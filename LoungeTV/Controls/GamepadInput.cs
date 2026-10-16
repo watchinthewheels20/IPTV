@@ -3,13 +3,13 @@ using System.Windows.Threading;
 
 namespace LoungeTV.Controls;
 
-public enum GamepadCommand { Up, Down, Left, Right, Select, Back, Fullscreen, ShiftEarlier, ShiftLater }
+public enum GamepadCommand { Up, Down, Left, Right, Select, Back, Fullscreen, ShiftEarlier, ShiftLater, NextCategory }
 
 /// <summary>Basic Xbox/XInput navigation. Text entry still requires a keyboard.</summary>
 public sealed class GamepadInput : IDisposable
 {
     private const ushort Up = 0x0001, Down = 0x0002, Left = 0x0004, Right = 0x0008;
-    private const ushort A = 0x1000, B = 0x2000, X = 0x4000, LB = 0x0100, RB = 0x0200;
+    private const ushort A = 0x1000, B = 0x2000, X = 0x4000, Y = 0x8000, LB = 0x0100, RB = 0x0200;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(30) };
     private readonly Dictionary<ushort, DateTime> _nextRepeat = new();
     private ushort _lastButtons;
@@ -65,6 +65,7 @@ public sealed class GamepadInput : IDisposable
             Emit(buttons, X, GamepadCommand.Fullscreen, false);
             Emit(buttons, LB, GamepadCommand.ShiftEarlier, false);
             Emit(buttons, RB, GamepadCommand.ShiftLater, false);
+            Emit(buttons, Y, GamepadCommand.NextCategory, false);
             _lastButtons = buttons;
         }
         catch (DllNotFoundException) { _available = false; Stop(); }
