@@ -90,9 +90,17 @@ public sealed class XtreamApiClient : IDisposable
             var name = GetString(channel, "name") ?? $"Channel {id}";
             _ = int.TryParse(GetString(channel, "num"), out var number);
             channels.Add(new LiveChannel(id, number, name, GetString(channel, "category_id") ?? "",
-                GetString(channel, "stream_icon") ?? ""));
+                GetString(channel, "stream_icon") ?? "", GetString(channel, "epg_channel_id") ?? ""));
         }
         return channels.OrderBy(c => c.Number <= 0 ? int.MaxValue : c.Number).ThenBy(c => c.Name).ToArray();
+    }
+
+    public async Task<EpgSnapshot> GetEpgAsync(IReadOnlyCollection<LiveChannel> channels, CancellationToken token = default)
+    {
+        // Common Xtream-compatible bulk XMLTV endpoint. Keep credentials out of logs.
+        var uri = new Uri($"{_baseUrl}/xmltv.php?username={Uri.EscapeDataString(_connection.Username)}" +
+                          $"&password={Uri.EscapeDataString(_connection.Password)}");
+        return await XmlTvService.LoadAsync(_http, uri, channels, token);
     }
 
     public Uri GetStreamUri(long streamId, string extension)

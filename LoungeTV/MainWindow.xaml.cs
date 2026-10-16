@@ -23,6 +23,8 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _searchTimer = new() { Interval = TimeSpan.FromMilliseconds(90) };
     private readonly GamepadInput _gamepad = new();
     private readonly List<LiveChannel> _allChannels = new();
+    private CancellationTokenSource? _epgDownload;
+    private EpgSnapshot _epg = EpgSnapshot.Empty;
     private XtreamApiClient? _api;
     private IptvAccount? _account;
     private LibVLC? _libVlc;
@@ -47,6 +49,8 @@ public partial class MainWindow : Window
         CategoryList.ItemsSource = _categories;
         ChannelList.ItemsSource = _visibleChannels;
         _normalBrowseMargin = BrowsePanel.Margin;
+        GuideView.WatchRequested += WatchGuideChannel;
+        GuideView.RefreshRequested += () => { if (_api is not null) _ = LoadEpgAsync(_api); };
         _searchTimer.Tick += (_, _) => { _searchTimer.Stop(); if (_allChannels.Count > 0) UpdateVisibleChannels(); };
         _gamepad.Command += HandleGamepad;
         _gamepad.Start();
@@ -93,6 +97,9 @@ public partial class MainWindow : Window
             _api = newClient;
             newClient = null;
             _account = account;
+            _epgDownload?.Cancel();
+            _epg = EpgSnapshot.Empty;
+            GuideView.SetEpg(_epg);
             previousClient?.Dispose();
 
             _allChannels.Clear();
@@ -102,6 +109,8 @@ public partial class MainWindow : Window
             foreach (var category in categories) _categories.Add(category);
             CategoryList.SelectedIndex = 0;
             UpdateVisibleChannels();
+            GuideView.SetChannels(_allChannels);
+            GuideView.SetCategories(_categories);
             HomeCategoryItems.ItemsSource = categories.Take(9).ToArray();
             UpdateResumeTile();
 
@@ -119,12 +128,17 @@ public partial class MainWindow : Window
 
             LoginPanel.Visibility = Visibility.Collapsed;
             HomePanel.Visibility = Visibility.Collapsed;
-            BrowsePanel.Visibility = Visibility.Visible;
-            HomeButton.Visibility = AccountButton.Visibility = RefreshButton.Visibility = FullScreenButton.Visibility = Visibility.Visible;
+            BrowsePanel.Visibility = Visibility.Collapsed;
+            GuideView.Visibility = Visibility.Visible;
+            GuideButton.Visibility = ChannelsButton.Visibility = HomeButton.Visibility =
+                AccountButton.Visibility = RefreshButton.Visibility = Visibility.Visible;
+            FullScreenButton.Visibility = Visibility.Collapsed;
             GeneralStatusText.Text = $"Connected · {channels.Count:N0} channels · {categories.Count:N0} categories.{persisted}";
-            PlayerStatusText.Text = "Select a channel and press A, Enter or Play selected.";
-            ChannelList.Focus();
+            PlayerStatusText.Text = "Select a channel and press A, Enter or Watch channel.";
+            GuideView.GoNow();
+            GuideView.Focus();
             _focusChannels = true;
+            _ = LoadEpgAsync(_api!);
         }
         catch (ArgumentException ex)
         {
@@ -170,6 +184,62 @@ public partial class MainWindow : Window
             MessageBox.Show(this, message, "Connection failed", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
+    private async Task LoadEpgAsync(XtreamApiClient client)
+    {
+        _epgDownload?.Cancel();
+        var cts = new CancellationTokenSource();
+        _epgDownload = cts;
+        GuideView.SetStatus("Downloading programme listings…");
+        try
+        {
+            // XMLTV feeds can be large. Parse on a worker, never on the WPF UI thread.
+            var subscribedChannels = _allChannels.ToArray();
+            var data = await Task.Run(() => client.GetEpgAsync(subscribedChannels, cts.Token), cts.Token);
+            if (cts.IsCancellationRequested || _api != client || _closingInProgress) return;
+            _epg = data;
+            GuideView.SetEpg(data);
+            PlaybackDiagnostics.Note($"EPG parsed: {data.ProgrammeCount} programmes");
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (!cts.IsCancellationRequested && _api == client && !_closingInProgress)
+            {
+                GuideView.SetStatus($"EPG unavailable ({ex.GetType().Name}). Press Refresh EPG to retry.");
+                PlaybackDiagnostics.Failure("Loading EPG", ex);
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_epgDownload, cts)) _epgDownload = null;
+            cts.Dispose();
+        }
+    }
+
+    private void WatchGuideChannel(LiveChannel channel)
+    {
+        CategoryList.SelectedIndex = 0;
+        SearchBox.Text = "";
+        UpdateVisibleChannels();
+        ChannelList.SelectedItem = _visibleChannels.FirstOrDefault(c => c.Id == channel.Id);
+        ShowLiveTv();
+        PlaySelectedChannel();
+    }
+
+    private void GuideButton_Click(object sender, RoutedEventArgs e) => ShowGuide();
+    private void ChannelsButton_Click(object sender, RoutedEventArgs e) => ShowLiveTv();
+
+    private void ShowGuide()
+    {
+        if (_api is null) return;
+        if (_fullScreen) ToggleFullscreen();
+        HomePanel.Visibility = Visibility.Collapsed;
+        BrowsePanel.Visibility = Visibility.Collapsed;
+        GuideView.Visibility = Visibility.Visible;
+        FullScreenButton.Visibility = Visibility.Collapsed;
+        GuideView.Focus();
+    }
+
     private void UpdateVisibleChannels()
     {
         // Replace one ItemsSource instead of triggering thousands of
@@ -213,6 +283,7 @@ public partial class MainWindow : Window
     {
         if (_api is null) return;
         HomePanel.Visibility = Visibility.Collapsed;
+        GuideView.Visibility = Visibility.Collapsed;
         BrowsePanel.Visibility = Visibility.Visible;
         FullScreenButton.Visibility = Visibility.Visible;
         if (focusSearch) SearchBox.Focus();
@@ -225,6 +296,7 @@ public partial class MainWindow : Window
         if (_api is null) return;
         if (_fullScreen) ToggleFullscreen();
         BrowsePanel.Visibility = Visibility.Collapsed;
+        GuideView.Visibility = Visibility.Collapsed;
         HomePanel.Visibility = Visibility.Visible;
         FullScreenButton.Visibility = Visibility.Collapsed;
         UpdateResumeTile();
@@ -233,7 +305,7 @@ public partial class MainWindow : Window
     }
 
     private void HomeButton_Click(object sender, RoutedEventArgs e) => ShowHome();
-    private void HomeLiveButton_Click(object sender, RoutedEventArgs e) => ShowLiveTv();
+    private void HomeLiveButton_Click(object sender, RoutedEventArgs e) => ShowGuide();
     private void HomeBrowseButton_Click(object sender, RoutedEventArgs e) => ShowLiveTv();
     private void HomeSearchButton_Click(object sender, RoutedEventArgs e) => ShowLiveTv(focusSearch: true);
 
@@ -446,8 +518,10 @@ public partial class MainWindow : Window
         await StopPlaybackAsync();
         BrowsePanel.Visibility = Visibility.Collapsed;
         HomePanel.Visibility = Visibility.Collapsed;
+        GuideView.Visibility = Visibility.Collapsed;
         LoginPanel.Visibility = Visibility.Visible;
-        HomeButton.Visibility = AccountButton.Visibility = RefreshButton.Visibility = FullScreenButton.Visibility = Visibility.Collapsed;
+        GuideButton.Visibility = ChannelsButton.Visibility = HomeButton.Visibility =
+            AccountButton.Visibility = RefreshButton.Visibility = FullScreenButton.Visibility = Visibility.Collapsed;
         LoginMessage.Text = "Update your connection or reconnect.";
         ServerBox.Focus();
     }
@@ -489,6 +563,44 @@ public partial class MainWindow : Window
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
+        if (GuideView.Visibility == Visibility.Visible)
+        {
+            if (GuideView.IsEditingPicker) return;
+            if (e.Key == Key.OemOpenBrackets || e.Key == Key.PageUp)
+            {
+                GuideView.ChangeOffset(-30); e.Handled = true; return;
+            }
+            if (e.Key == Key.OemCloseBrackets || e.Key == Key.PageDown)
+            {
+                GuideView.ChangeOffset(30); e.Handled = true; return;
+            }
+            if (e.Key == Key.C)
+            {
+                GuideView.Navigate(GamepadCommand.NextCategory); e.Handled = true; return;
+            }
+            var command = e.Key switch
+            {
+                Key.Up => GamepadCommand.Up,
+                Key.Down => GamepadCommand.Down,
+                Key.Left => GamepadCommand.Left,
+                Key.Right => GamepadCommand.Right,
+                Key.Enter => GamepadCommand.Select,
+                _ => (GamepadCommand?)null
+            };
+            if (command is { } navigation)
+            {
+                GuideView.Navigate(navigation);
+                e.Handled = true;
+                return;
+            }
+            if (e.Key is Key.Escape or Key.Back)
+            {
+                ShowLiveTv();
+                e.Handled = true;
+                return;
+            }
+        }
+
         if (HomePanel.Visibility == Visibility.Visible &&
             e.Key is Key.Up or Key.Down or Key.Left or Key.Right)
         {
@@ -523,6 +635,13 @@ public partial class MainWindow : Window
     private void HandleGamepad(GamepadCommand command)
     {
         if (!IsActive) return;
+
+        if (GuideView.Visibility == Visibility.Visible)
+        {
+            if (command == GamepadCommand.Back) ShowLiveTv();
+            else GuideView.Navigate(command);
+            return;
+        }
 
         if (HomePanel.Visibility == Visibility.Visible)
         {
@@ -616,6 +735,7 @@ public partial class MainWindow : Window
 
         _closingInProgress = true;
         _gamepad.Dispose();
+        _epgDownload?.Cancel();
         await StopPlaybackAsync();
         try
         {
