@@ -1,0 +1,66 @@
+name: Publish LoungeTV v1.0.0
+
+# One-time release workflow: triggers only when this file is first committed to main.
+# workflow_dispatch permits a retry if the initial release job fails.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish v1.0.0
+    if: github.repository == 'watchinthewheels20/IPTV'
+    runs-on: windows-latest
+    steps:
+      - name: Check out versioned source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run GMT/BST and XMLTV smoke checks
+        shell: pwsh
+        run: dotnet run --project LoungeTV.EpgChecks/LoungeTV.EpgChecks.csproj -c Release
+
+      - name: Build self-contained Windows application
+        shell: pwsh
+        run: ./Build-LoungeTV.ps1
+
+      - name: Check output
+        shell: pwsh
+        run: |
+          if (!(Test-Path 'publish/LoungeTV-win-x64/LoungeTV.exe')) {
+            throw 'Executable missing.'
+          }
+          if (!(Get-ChildItem 'publish/LoungeTV-win-x64' -Recurse -Filter 'libvlc.dll' -File)) {
+            throw 'Native playback library missing.'
+          }
+
+      - name: Package Windows files
+        shell: pwsh
+        run: |
+          Compress-Archive -Path 'publish/LoungeTV-win-x64/*' -DestinationPath 'LoungeTV-v1.0.0-win-x64.zip' -CompressionLevel Optimal
+          if (!(Test-Path 'LoungeTV-v1.0.0-win-x64.zip')) {
+            throw 'Release ZIP missing.'
+          }
+
+      - name: Create tagged GitHub release with ZIP
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v1.0.0 -R $env:GITHUB_REPOSITORY --json tagName *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host 'LoungeTV v1.0.0 already published; leaving it untouched.'
+            exit 0
+          }
+          gh release create v1.0.0 'LoungeTV-v1.0.0-win-x64.zip' --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title 'LoungeTV v1.0.0' --notes-file 'docs/RELEASE_NOTES_v1.0.md'
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release creation failed.' }
