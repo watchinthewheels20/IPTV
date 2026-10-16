@@ -9,6 +9,8 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Threading;
+using System.Windows.Interop;
+using System.Runtime.InteropServices;
 using LibVLCSharp.Shared;
 using LoungeTV.Controls;
 using LoungeTV.Models;
@@ -49,6 +51,7 @@ public partial class MainWindow : Window
     private System.Windows.Controls.ProgressBar? _bannerProgress;
     private int _bannerSelectedIndex;
     private int _bannerProgrammeIndex;
+    private int _bannerProgrammeCount;
     private bool _focusChannels = true;
     private DispatcherOperation? _scrollOperation;
     private WindowState _previousWindowState = WindowState.Normal;
@@ -679,12 +682,8 @@ public partial class MainWindow : Window
             }
             if (_epgOverlay is not null)
             {
-                if (key is Key.Up or Key.Down) MoveOverlaySelection(key == Key.Up ? -1 : 1);
-                else if (key is Key.Left or Key.Right)
-                {
-                    _bannerProgrammeIndex = key == Key.Left ? 0 : 1;
-                    RefreshOverlayListings();
-                }
+                if (key is Key.Left or Key.Right) MoveOverlaySelection(key == Key.Left ? -1 : 1);
+                else if (key is Key.Up or Key.Down) MoveOverlayProgramme(key == Key.Up ? -1 : 1)
                 else if (key is Key.Enter or Key.Return) TuneOverlaySelection();
                 else return;
                 e.Handled = true;
@@ -754,7 +753,7 @@ public partial class MainWindow : Window
 
     private void HandleGamepad(GamepadCommand command)
     {
-        if (!IsActive) return;
+        if (!IsActive && (_epgOverlay is null || !_epgOverlay.IsActive)) return;
 
         if (GuideView.Visibility == Visibility.Visible)
         {
@@ -796,8 +795,10 @@ public partial class MainWindow : Window
             if (_epgOverlay is not null)
             {
                 if (command == GamepadCommand.Back) CloseEpgOverlay();
-                else if (command == GamepadCommand.Up) MoveOverlaySelection(-1);
-                else if (command == GamepadCommand.Down) MoveOverlaySelection(1);
+                else if (command == GamepadCommand.Left) MoveOverlaySelection(-1);
+                else if (command == GamepadCommand.Right) MoveOverlaySelection(1);
+                else if (command == GamepadCommand.Up) MoveOverlayProgramme(-1);
+                else if (command == GamepadCommand.Down) MoveOverlayProgramme(1);
                 else if (command == GamepadCommand.Select) TuneOverlaySelection();
                 return;
             }
@@ -894,10 +895,27 @@ public partial class MainWindow : Window
             Width = ActualWidth, Height = ActualHeight,
             IsHitTestVisible = false
         };
+        // Keep keyboard focus on the video owner. The banner must never
+        // become the active window and steal the Rii remote's keyboard events.
+        _epgOverlay.SourceInitialized += (_, _) =>
+        {
+            var source = (HwndSource?)PresentationSource.FromVisual(_epgOverlay);
+            if (source is null) return;
+            var exStyle = GetWindowLongPtr(source.Handle, -20);
+            SetWindowLongPtr(source.Handle, -20, new IntPtr(exStyle.ToInt64() | 0x08000000L));
+        };
+        _epgOverlay.PreviewKeyDown += (_, args) => Window_KeyDown(this, args);
         _epgOverlay.Show();
+        Activate();
         _overlayRefreshTimer.Start();
         RefreshOverlayListings();
     }
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    private static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    private static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
 
     private void CloseEpgOverlay()
     {
@@ -920,21 +938,26 @@ public partial class MainWindow : Window
         var now = DateTimeOffset.UtcNow;
         var shift = TimeSpan.FromMinutes(EpgOffsetStore.LoadMinutes());
         var london = TimeZoneInfo.FindSystemTimeZoneById("GMT Standard Time");
-        var programmes = _epg.ForChannel(channel);
-        var playing = programmes.FirstOrDefault(p => p.StartUtc + shift <= now && p.EndUtc + shift > now);
-        var next = programmes.FirstOrDefault(p => p.StartUtc + shift > now);
+        var programmes = _epg.ForChannel(channel)
+            .Where(p => p.EndUtc + shift > now)
+            .Take(64).ToArray();
+        _bannerProgrammeCount = programmes.Length;
+        _bannerProgrammeIndex = Math.Clamp(_bannerProgrammeIndex, 0, Math.Max(0, programmes.Length - 1));
+        var playing = programmes.Length > 0 ? programmes[_bannerProgrammeIndex] : null;
+        var next = _bannerProgrammeIndex + 1 < programmes.Length
+            ? programmes[_bannerProgrammeIndex + 1] : null;
         static string TimeLabel(DateTimeOffset time, TimeZoneInfo zone) =>
             TimeZoneInfo.ConvertTime(time, zone).ToString("HH:mm");
         _bannerChannel.Text = channel.DisplayName + (_playingChannel?.Id == channel.Id ? "   • LIVE" : "   • PREVIEW");
         _bannerClock.Text = TimeZoneInfo.ConvertTime(now, london).ToString("ddd dd MMM  HH:mm");
-        _bannerNow.Text = playing is null ? "NOW     No programme information" :
-            $"NOW     {TimeLabel(playing.StartUtc + shift, london)}–{TimeLabel(playing.EndUtc + shift, london)}   {playing.Title}";
-        _bannerNext.Text = next is null ? "NEXT    No programme information" :
+        _bannerNow.Text = playing is null ? "No programme information" :
+            $"{(_bannerProgrammeIndex == 0 ? "NOW" : "LATER")}   {TimeLabel(playing.StartUtc + shift, london)}–{TimeLabel(playing.EndUtc + shift, london)}   {playing.Title}";
+        _bannerNext.Text = next is null ? "No further programme information" :
             $"NEXT    {TimeLabel(next.StartUtc + shift, london)}   {next.Title}";
-        _bannerNow.FontWeight = _bannerProgrammeIndex == 0 ? FontWeights.Bold : FontWeights.Normal;
-        _bannerNext.FontWeight = _bannerProgrammeIndex == 1 ? FontWeights.Bold : FontWeights.Normal;
-        _bannerHint.Text = "▲▼ Browse channels    ◄► Now / Next    OK Tune    Back Close    Menu Minimise";
-        _bannerProgress.Value = playing is null ? 0 : Math.Clamp(
+        _bannerNow.FontWeight = FontWeights.Bold;
+        _bannerNext.FontWeight = FontWeights.Normal;
+        _bannerHint.Text = "◄► Browse channels    ▲▼ Programme times    OK Tune    Back Close    Menu Minimise";
+        _bannerProgress.Value = playing is null || now < playing.StartUtc + shift ? 0 : Math.Clamp(
             (now - (playing.StartUtc + shift)).TotalSeconds /
             Math.Max(1, (playing.EndUtc - playing.StartUtc).TotalSeconds) * 100, 0, 100);
     }
@@ -944,6 +967,13 @@ public partial class MainWindow : Window
         if (_epgOverlay is null || _visibleChannels.Count == 0) return;
         _bannerSelectedIndex = Math.Clamp(_bannerSelectedIndex + delta, 0, _visibleChannels.Count - 1);
         _bannerProgrammeIndex = 0;
+        RefreshOverlayListings();
+    }
+
+    private void MoveOverlayProgramme(int delta)
+    {
+        if (_epgOverlay is null || _bannerProgrammeCount == 0) return;
+        _bannerProgrammeIndex = Math.Clamp(_bannerProgrammeIndex + delta, 0, _bannerProgrammeCount - 1);
         RefreshOverlayListings();
     }
 
