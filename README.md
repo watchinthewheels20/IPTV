@@ -112,6 +112,43 @@ The experimental Sky Glass-style tiles have been replaced by a **classic blue Sk
 
 **Still needs real-device verification:** The Windows CI build checks compilation and packaging, but not actual gamepad or menu latency on a TV. The log in `%LOCALAPPDATA%\LoungeTV\playback.log` is about playback startup, not UI frame timing.
 
+## Sky+ HD-style programme guide and EPG correction
+
+Version 1.2 adds an electronic programme guide using your provider's Xtream
+`xmltv.php` endpoint. The EPG is downloaded in the background after login.
+Channel viewing and account login do not depend on a successful EPG download.
+
+- **TV Guide** displays a two-hour horizontal schedule with programme titles,
+  current-time marker, channel selection, programme details and descriptions.
+- **Category** drop-down filters very large playlists; Xbox **Y** cycles categories.
+- **D-pad Up/Down** selects channels; **Left/Right** steps the selection by 30 minutes.
+- **A / Enter** tunes to the selected channel, using the existing VLC player.
+- **NOW** jumps to the current guide time; **30m** buttons navigate earlier/later.
+- **LB/RB** manually adjusts the EPG display by -/+ 30 minutes.
+  Use **+1h** if the provider's programmes are showing one hour too early;
+  use **-1h** if they're showing one hour too late.
+- You can also choose **EPG SHIFT** from **-2h to +2h** in 30-minute steps.
+  The setting is saved in `%LOCALAPPDATA%\LoungeTV\epg-offset.txt` and persists
+  across app restarts. The shift changes *only the programme schedule*, not the
+  computer clock or actual stream timing.
+- Keyboard alternatives: **PageUp/PageDown** (shift -/+30 minutes) and **C**
+  (next category).
+- **Refresh EPG** reloads listings without interrupting current playback.
+
+XMLTV timestamps are parsed according to their supplied UTC offsets and converted
+to UK local time using London's GMT/BST rules **before** your optional provider
+correction is applied. For correctly specified XMLTV feeds, leave EPG SHIFT at **0h**.
+The app cannot correct inconsistent per-channel provider scheduling by a single offset.
+
+XMLTV provider compatibility varies. If you see **EPG unavailable**, confirm your
+provider supports `xmltv.php` and try Refresh EPG. Missing programme information
+can also indicate unmatched channel IDs in the provider data. Large XMLTV feeds
+are streamed and filtered to the channels in your subscription.
+
+A lightweight .NET automated EPG check is in `LoungeTV.EpgChecks`; GitHub Actions
+runs it during every Windows build. This tests UTC offsets, BST/GMT conversion,
+XMLTV parsing and channel matching, but not real provider behaviour.
+
 ## Stage 2 and later
 
 The planned next addition is a Sky Q-inspired channel guide using provider XMLTV/EPG data, integrated with the same existing video session. A Sky Glass-inspired home screen, favourites, VOD and improved remote control support will follow.
