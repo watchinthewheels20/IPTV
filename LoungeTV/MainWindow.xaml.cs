@@ -95,9 +95,16 @@ public partial class MainWindow : Window
         try
         {
             newClient = new XtreamApiClient(details);
-            var account = await newClient.AuthenticateAsync();
-            var categories = await newClient.GetCategoriesAsync();
-            var channels = await newClient.GetChannelsAsync();
+            // Some Xtream implementations perform expensive JSON parsing synchronously
+            // after network responses. Keep authentication/catalogue work off the UI thread.
+            var catalogueClient = newClient;
+            var (account, categories, channels) = await Task.Run(async () =>
+            {
+                var authenticated = await catalogueClient.AuthenticateAsync();
+                var loadedCategories = await catalogueClient.GetCategoriesAsync();
+                var loadedChannels = await catalogueClient.GetChannelsAsync();
+                return (authenticated, loadedCategories, loadedChannels);
+            });
             if (channels.Count == 0)
                 throw new InvalidDataException("Login succeeded but this account has no accessible live channels.");
 
@@ -629,6 +636,50 @@ public partial class MainWindow : Window
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
+        // Rii i25: front D-pad emits arrow keys; OK emits Enter with air-mouse off.
+        // Menu is typically Apps/ContextMenu; PageUp/PageDown are dedicated keys.
+        // Handle keys on PreviewKeyDown so a focused ListBox cannot swallow them.
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (LoginPanel.Visibility == Visibility.Visible) return;
+        if (key is Key.BrowserBack or Key.Escape or Key.Back)
+        {
+            if (_epgOverlay is not null) CloseEpgOverlay();
+            else if (_fullScreen) ToggleFullscreen();
+            else if (GuideView.Visibility == Visibility.Visible) ShowLiveTv();
+            else if (BrowsePanel.Visibility == Visibility.Visible) ShowHome();
+            e.Handled = true;
+            return;
+        }
+        if (_fullScreen)
+        {
+            if (key is Key.Apps or Key.G or Key.Tab or Key.PageUp or Key.PageDown)
+            {
+                ToggleEpgOverlay(); e.Handled = true; return;
+            }
+            if (_epgOverlay is not null)
+            {
+                if (key is Key.Up or Key.Down)
+                    MoveOverlaySelection(key == Key.Up ? -1 : 1);
+                else if (key is Key.Enter or Key.Return)
+                    TuneOverlaySelection();
+                else return;
+                e.Handled = true;
+                return;
+            }
+            if (key is Key.Up or Key.Down)
+            {
+                ChangeChannel(key == Key.Up ? -1 : 1);
+                e.Handled = true; return;
+            }
+            if (key is Key.Enter or Key.Return)
+            {
+                ToggleEpgOverlay(); e.Handled = true; return;
+            }
+            if (key is Key.Left or Key.Right)
+            {
+                ToggleEpgOverlay(); e.Handled = true; return;
+            }
+        }
         if (_fullScreen && e.Key is Key.G or Key.Tab)
         {
             ToggleEpgOverlay(); e.Handled = true; return;
@@ -802,7 +853,7 @@ public partial class MainWindow : Window
         _overlayList.SelectionChanged += (_, _) => { };
         var title = new TextBlock
         {
-            Text = "TV GUIDE    •    Y / G: close     A / Enter: watch",
+            Text = "TV GUIDE   •   Menu / PgUp: close   •   OK: watch   •   Back: close",
             FontSize = 19, FontWeight = FontWeights.Bold, Foreground =
                 System.Windows.Media.Brushes.Gold, Margin = new Thickness(18, 12, 10, 12)
         };
