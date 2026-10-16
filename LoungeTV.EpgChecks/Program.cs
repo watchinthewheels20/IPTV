@@ -35,12 +35,13 @@ var xml = $"""
 """;
 
 using var client = new HttpClient(new FakeHandler(xml));
-var snapshot = await XmlTvService.LoadAsync(client, new Uri("https://example.org/xmltv.php"));
 var channel = new LiveChannel(1, 101, "BBC One HD", "uk", "", "bbc.one");
+var snapshot = await XmlTvService.LoadAsync(client, new Uri("https://example.org/xmltv.php"), new[] { channel });
 Check(snapshot.ProgrammeCount == 1, "XMLTV count");
 Check(snapshot.ForChannel(channel).Single().Title == "Sample Show", "EPG channel id");
 var fallback = channel with { EpgChannelId = "" };
 Check(snapshot.ForChannel(fallback).Count == 1, "XMLTV name fallback");
+Check(EpgSnapshot.NormaliseChannelName("UK: BBC One HD") == "BBC One", "channel name normalisation");
 Console.WriteLine("EPG timestamp, UK timezone, shift, parse and mapping checks passed.");
 
 sealed class FakeHandler(string xml) : HttpMessageHandler
