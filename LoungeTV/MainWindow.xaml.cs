@@ -683,7 +683,7 @@ public partial class MainWindow : Window
             if (_epgOverlay is not null)
             {
                 if (key is Key.Left or Key.Right) MoveOverlaySelection(key == Key.Left ? -1 : 1);
-                else if (key is Key.Up or Key.Down) MoveOverlayProgramme(key == Key.Up ? -1 : 1)
+                else if (key is Key.Up or Key.Down) MoveOverlayProgramme(key == Key.Up ? -1 : 1);
                 else if (key is Key.Enter or Key.Return) TuneOverlaySelection();
                 else return;
                 e.Handled = true;
