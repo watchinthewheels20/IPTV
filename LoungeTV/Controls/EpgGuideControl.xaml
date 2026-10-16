@@ -21,6 +21,11 @@
                            FontSize="12" TextTrimming="CharacterEllipsis"
                            Foreground="#B6C9E2" VerticalAlignment="Center" Width="270"/>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <TextBlock Text="CATEGORY" Foreground="#FFCA39" FontSize="12" FontWeight="Bold"
+                               VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <ComboBox x:Name="EpgCategoryBox" Width="135" Margin="0,0,9,0"
+                              DisplayMemberPath="Name" VerticalAlignment="Center"
+                              SelectionChanged="EpgCategory_SelectionChanged"/>
                     <Button Content="&#x25C0; 30m" Click="Earlier_Click" Padding="11,8" Margin="0,0,5,0"/>
                     <Button Content="NOW" Click="Now_Click" Padding="11,8" Margin="0,0,5,0"/>
                     <Button Content="30m &#x25B6;" Click="Later_Click" Padding="11,8" Margin="0,0,9,0"/>
@@ -62,7 +67,7 @@
                 </StackPanel>
             </Border>
             <DockPanel Grid.Row="4" Margin="1,12,0,0">
-                <TextBlock Text="D-pad: channels / time    A: watch    LB/RB: shift EPG 30m    B: back"
+                <TextBlock Text="D-pad: channels / time    A: watch    LB/RB: shift 30m    Y: category    B: back"
                            DockPanel.Dock="Left" VerticalAlignment="Center"
                            Foreground="#B4C7DD" FontSize="12"/>
                 <Button DockPanel.Dock="Right" Content="WATCH CHANNEL" Click="Watch_Click"
