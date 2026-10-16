@@ -1,161 +1,39 @@
-# LoungeTV — Stage 1 (Windows / Xtream Codes)
+# LoungeTV
 
-A first functional **source-code release** for a Windows 11 living-room IPTV player. It uses WPF and LibVLCSharp. The supplied ZIP contains source and build scripts; **it does not contain a compiled EXE**. Compilation and video testing require Windows.
+**Version 1.0.0** — Windows 11 living-room IPTV player, inspired by the classic Sky+ HD interface.
 
-## What Stage 1 does
+A native **C# / WPF / .NET 10** application with Xtream Codes access, live TV, an XMLTV programme guide, Xbox controller navigation and manual programme-time correction for provider EPGs. Use only services and streams you are authorised to access.
 
-- Xtream Codes Player API account authentication, subscription status checking
-- Live categories and channel retrieval
-- Local text search and channel filtering
-- Live playback via LibVLC with TS/HLS format selection (Auto / MPEG-TS / HLS)
-- Fullscreen playback (F11 / Escape), channel switching in fullscreen with D-pad
-- Keyboard / mouse and basic Xbox/XInput controller operation
-- Optional Windows DPAPI-encrypted password storage at `%LOCALAPPDATA%\LoungeTV\settings.json`
-- Single active playback session; no channel guide or VOD in Stage 1
+The project's maintained technical context and design decisions are in **[Development Reference](docs/DEVELOPMENT_REFERENCE.md)**.
 
-## Build on the living-room PC
+## Download or build
 
-1. Download/install **.NET 10 SDK for Windows x64** (SDK, *not* just the runtime): https://dotnet.microsoft.com/download/dotnet/10.0
-2. Extract the entire ZIP somewhere writable.
-3. Open PowerShell in the extracted `LoungeTV-Stage1` directory.
-4. Run:
+- **Stable milestone:** [LoungeTV v1.0.0 on GitHub Releases](https://github.com/watchinthewheels20/IPTV/releases/tag/v1.0.0) (Windows x64 ZIP; includes LibVLC and .NET runtime).
+- **Latest development build:** [GitHub Actions](https://github.com/watchinthewheels20/IPTV/actions/workflows/windows-build.yml). Open a successful run and download `LoungeTV-win-x64` from Artifacts.
+- **Build from source:** Install the [.NET 10 SDK for Windows x64](https://dotnet.microsoft.com/download/dotnet/10.0), then run in PowerShell:
 
-   ```powershell
-   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Build-LoungeTV.ps1
-   ```
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Build-LoungeTV.ps1
+```
 
-5. The compiled app will be in `publish\LoungeTV-win-x64\`. Run **LoungeTV.exe** there. Keep the full folder together.
+The executable is output to `publish\LoungeTV-win-x64\LoungeTV.exe`. Keep its support files together. A separate VLC Media Player install is **not** required. The normal published app is self-contained; a smaller framework-dependent build is available with `-FrameworkDependent`.
 
-The script runs `dotnet publish -c Release -r win-x64 --self-contained true` and downloads the specified NuGet dependencies during the first build. A self-contained build needs neither a separate .NET runtime nor a separate VLC desktop installation to **run**. It **does** include native LibVLC DLLs and its plugin folder as app-local files.
+## Set up and use
 
-To build a smaller output that requires the .NET Desktop Runtime on the target PC, add `-FrameworkDependent` to the script command.
+Enter the **Xtream-compatible base server URL**, username and password. The app loads categories and channels, then asynchronously retrieves the provider's `xmltv.php` programme feed. The initial screen after connecting is the TV Guide. Use the Guide/Channels/Home controls to switch screens.
 
-## IPTV setup
+- **TV Guide:** two-hour timeline, channel rows, programme information, categories, NOW and 30-minute time navigation.
+- **Watch:** select a channel and press A/Enter; in the channel browser use the Mini TV and full-screen player.
+- **Stream format:** Auto selects TS/HLS from account capabilities; switch to HLS or MPEG-TS manually if required.
+- **EPG SHIFT:** choose -2h to +2h in 30-minute increments. Use **+1h** if the provider's programme titles are one hour early; **-1h** if they are one hour late. Leave **0h** for a correct feed. UK GMT/BST conversion happens automatically before this correction, and the choice is remembered.
+- **Controller:** guide D-pad up/down = channels, left/right = programme time, A = watch, Y = next category, LB/RB = change EPG shift, B = back. The channel browser supports D-pad navigation, A to play, and X for fullscreen. Keyboard shortcuts are documented in the Development Reference.
 
-Enter the **base server URL** (example: `https://your-provider.example:443`), username and password. This is **not** a playlist/M3U URL or a URL ending in `player_api.php`.
+## Security and diagnostics
 
-After connection:
-- Choose a category, select a channel, then press **Play selected** or double-click it.
-- Stream format defaults to TS when permitted and falls back to HLS for HLS-only accounts. You can manually override the playback format if your provider requires it.
-- Press **Stop** to close the current stream.
-- Use **F11** to enter/exit fullscreen; **Escape** exits fullscreen.
-- **Refresh channels** fetches an updated listing.
-- **Account** returns to the login form. Login must be reconfirmed after restarting (the saved password may be filled automatically).
+Optional saved credentials use Windows DPAPI CurrentUser protection. Sensitive Xtream URLs can contain account details, so don't post or commit credentials or stream links. HTTPS is preferred when your provider supports it. Playback diagnostics are at `%LOCALAPPDATA%\LoungeTV\playback.log`; EPG correction at `%LOCALAPPDATA%\LoungeTV\epg-offset.txt`.
 
-The API is based on common Xtream-compatible endpoints:
-- `/player_api.php?username=...&password=...`
-- `/player_api.php?...&action=get_live_categories`
-- `/player_api.php?...&action=get_live_streams`
-- `/live/{username}/{password}/{stream_id}.ts` (or `.m3u8`)
+## Current limits
 
-Provider compatibility may vary. The app does not support DRM-protected playback, M3U-only providers, proxy login, VOD or EPG in this release.
+There is **no** VOD/series browser, favourites, DVR/live-video pause/rewind, persistent EPG cache, installer, code signing, DRM bypass, or HDMI-CEC remote power control. UI/controller performance and provider EPG compatibility need testing on the actual Windows PC. GitHub Actions verifies compilation, packaging and sample GMT/BST/XMLTV cases—not real provider operation.
 
-## Xbox controller (early implementation)
-
-- **Left / Right:** switch focus between category list and channel list
-- **Up / Down:** move the selection
-- **A:** play selected channel (or move to channel list if currently selecting a category)
-- **B:** stop playback; if fullscreen, exit fullscreen
-- **X:** toggle fullscreen
-- In fullscreen, **Up / Down:** switch channels from the active channel filter
-
-Use mouse/keyboard to enter the server credentials, username, password or search text. DirectInput-only or Bluetooth remotes that do not emulate XInput are not supported by the controller integration yet.
-
-## Safety and privacy
-
-- **Only use IPTV streams that you are authorised to access.**
-- Passwords are stored locally using **Windows DPAPI CurrentUser** if Remember login is selected; users on a different Windows account cannot ordinarily decrypt them.
-- Your provider's Xtream API and stream URLs necessarily include credentials, sometimes in URL paths. The app does not write them to log files; avoid sharing raw process dumps or network traces.
-- **HTTPS is strongly recommended** if your provider supports it. The app allows HTTP for compatibility but credentials and streamed content may traverse the network unencrypted.
-- Invalid TLS certificates are **not** bypassed.
-- This software does not bypass DRM, geoblocking, or subscription limits.
-- The build is not digitally code-signed.
-
-## Troubleshooting
-
-**Build error `dotnet` not recognised**: install the .NET 10 **SDK**; restart PowerShell.
-
-**NuGet package restore fails**: verify access to nuget.org and corporate proxy/certificate settings. All library versions are pinned in `LoungeTV.csproj`.
-
-**Connection error**: check the base server URL, port, account status and login details. Some providers use a different Xtream-compatible API or require a special URL.
-
-**Video starts but shows a black screen**: try HLS instead of Auto, or MPEG-TS if HLS fails. Check whether the same stream works with your provider's other supported players. This is a first version, not a tested universal player.
-
-**Xbox controller doesn't respond**: verify that Windows recognises it as an XInput-compatible controller and that LoungeTV is the active window.
-
-## Diagnosing playback stalls (playback-fix build)
-
-If the channel list loads but video stays black, shows "Opening stream", or the UI stops responding:
-
-1. First choose **HLS** in the stream format box and try a channel. If that fails, try **MPEG-TS**.
-2. Check the playback status below the video. A stream without a VLC `Playing` event is marked as timed out after 20 seconds.
-3. Open `%LOCALAPPDATA%\LoungeTV\playback.log` (paste this path into Windows Explorer's address bar) and inspect the final events.
-4. Report whether the **whole window is unresponsive** or just **video remains black/buffering**. Also report which format you tried.
-
-The app records only playback stage names, format choice, timestamps, and exception *type*—not stream URLs, passwords, usernames, server addresses, or native VLC messages. You can normally share the log, but review it yourself first.
-
-The previous code called LibVLC's synchronous `MediaPlayer.Stop()` on the UI thread during every channel change. This build serialises media operations and performs blocking stop/play operations on background threads so the window can still respond when a provider or stream misbehaves.
-
-## Classic Sky+ HD-inspired interface (UI preview)
-
-The experimental Sky Glass-style tiles have been replaced by a **classic blue Sky+ HD-inspired** menu and channel browser, with rectangular guide panels and gold selection indicators.
-
-- On successful Xtream login, LoungeTV opens the **TV Guide/channel browser directly**.
-- Select a category on the left, a channel in the middle, and watch in the **Mini TV** area on the right.
-- **Home** opens an old-style text menu (TV Guide, All Channels, Search Channels, Last Channel). There is no animated card carousel.
-- **B / Escape** backs out from TV Guide to Home; **B** exits fullscreen first.
-- **D-pad** navigates, **A** selects, **X** toggles fullscreen. Keyboard arrow keys navigate Home too.
-- The actual programme-by-time EPG remains a *future feature*. Existing channel listings do not falsely show programme schedules.
-- Controller polling checks the active XInput device first and reduces its first-repeat delay from 340 to 195 ms. Key scan interval decreases from 60 to 30 ms.
-- Long channel-list scrolling is scheduled after selection updates and superseded scroll tasks are cancelled; channel search is batched and debounced at 90 ms.
-- Last-channel resume, Xtream login, native VLC playback and diagnostics remain in place.
-
-**Still needs real-device verification:** The Windows CI build checks compilation and packaging, but not actual gamepad or menu latency on a TV. The log in `%LOCALAPPDATA%\LoungeTV\playback.log` is about playback startup, not UI frame timing.
-
-## Sky+ HD-style programme guide and EPG correction
-
-Version 1.2 adds an electronic programme guide using your provider's Xtream
-`xmltv.php` endpoint. The EPG is downloaded in the background after login.
-Channel viewing and account login do not depend on a successful EPG download.
-
-- **TV Guide** displays a two-hour horizontal schedule with programme titles,
-  current-time marker, channel selection, programme details and descriptions.
-- **Category** drop-down filters very large playlists; Xbox **Y** cycles categories.
-- **D-pad Up/Down** selects channels; **Left/Right** steps the selection by 30 minutes.
-- **A / Enter** tunes to the selected channel, using the existing VLC player.
-- **NOW** jumps to the current guide time; **30m** buttons navigate earlier/later.
-- **LB/RB** manually adjusts the EPG display by -/+ 30 minutes.
-  Use **+1h** if the provider's programmes are showing one hour too early;
-  use **-1h** if they're showing one hour too late.
-- You can also choose **EPG SHIFT** from **-2h to +2h** in 30-minute steps.
-  The setting is saved in `%LOCALAPPDATA%\LoungeTV\epg-offset.txt` and persists
-  across app restarts. The shift changes *only the programme schedule*, not the
-  computer clock or actual stream timing.
-- Keyboard alternatives: **PageUp/PageDown** (shift -/+30 minutes) and **C**
-  (next category).
-- **Refresh EPG** reloads listings without interrupting current playback.
-
-XMLTV timestamps are parsed according to their supplied UTC offsets and converted
-to UK local time using London's GMT/BST rules **before** your optional provider
-correction is applied. For correctly specified XMLTV feeds, leave EPG SHIFT at **0h**.
-The app cannot correct inconsistent per-channel provider scheduling by a single offset.
-
-XMLTV provider compatibility varies. If you see **EPG unavailable**, confirm your
-provider supports `xmltv.php` and try Refresh EPG. Missing programme information
-can also indicate unmatched channel IDs in the provider data. Large XMLTV feeds
-are streamed and filtered to the channels in your subscription.
-
-A lightweight .NET automated EPG check is in `LoungeTV.EpgChecks`; GitHub Actions
-runs it during every Windows build. This tests UTC offsets, BST/GMT conversion,
-XMLTV parsing and channel matching, but not real provider behaviour.
-
-## Stage 2 and later
-
-The planned next addition is a Sky Q-inspired channel guide using provider XMLTV/EPG data, integrated with the same existing video session. A Sky Glass-inspired home screen, favourites, VOD and improved remote control support will follow.
-
-## Build status
-
-**Stage 1 revision 1 (15 October 2026):** Fixed missing `using System.Net.Http;` in `XtreamApiClient.cs`, which caused compiler error `CS0246` for `HttpClient`. Removed the redundant `System.Security.Cryptography.ProtectedData` package reference to resolve the .NET 10 `NU1510` warning. The code still needs a Windows build and run check.
-
-
-Source files and XAML were prepared and checked for XML well-formedness in a non-Windows build environment, **but this release has not been compiled or run on Windows here**. Treat it as a buildable first implementation requiring first-run testing and possible adjustments, not as a verified production EXE.
+For implementation details, file locations and future priorities, see [docs/DEVELOPMENT_REFERENCE.md](docs/DEVELOPMENT_REFERENCE.md).
