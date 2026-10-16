@@ -100,6 +100,12 @@ public partial class EpgGuideControl : UserControl
                 if (_cursor >= _windowStart.AddHours(2))
                     _windowStart = _windowStart.AddMinutes(30);
                 break;
+            case GamepadCommand.ShiftEarlier:
+                ChangeOffset(-30);
+                return;
+            case GamepadCommand.ShiftLater:
+                ChangeOffset(30);
+                return;
             case GamepadCommand.Select:
                 Watch();
                 return;
@@ -140,6 +146,22 @@ public partial class EpgGuideControl : UserControl
     private void Refresh_Click(object sender, RoutedEventArgs e) => RefreshRequested?.Invoke();
 
     private void Watch_Click(object sender, RoutedEventArgs e) => Watch();
+
+    public void ChangeOffset(int deltaMinutes)
+    {
+        var value = Math.Clamp(_offsetMinutes + deltaMinutes, -120, 120);
+        for (var i = 0; i < EpgOffsetBox.Items.Count; i++)
+        {
+            if (EpgOffsetBox.Items[i] is ComboBoxItem item &&
+                int.TryParse(item.Tag?.ToString(), out var minutes) && value == minutes)
+            {
+                EpgOffsetBox.SelectedIndex = i;
+                return;
+            }
+        }
+    }
+
+    public bool IsEditingOffset => EpgOffsetBox.IsDropDownOpen;
 
     private void EpgOffset_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
