@@ -62,7 +62,7 @@
                 </StackPanel>
             </Border>
             <DockPanel Grid.Row="4" Margin="1,12,0,0">
-                <TextBlock Text="D-pad: channels / time    A or Enter: watch    B or Esc: back"
+                <TextBlock Text="D-pad: channels / time    A: watch    LB/RB: shift EPG 30m    B: back"
                            DockPanel.Dock="Left" VerticalAlignment="Center"
                            Foreground="#B4C7DD" FontSize="12"/>
                 <Button DockPanel.Dock="Right" Content="WATCH CHANNEL" Click="Watch_Click"
